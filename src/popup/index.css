@@ -1,0 +1,35 @@
+body {
+  /* Adjust width as needed */
+  width: 380px;
+  font-family: sans-serif;
+  padding: 10px;
+  margin: 0;
+  /* Ensure no transparent background from sidebar attempt */
+  background-color: #f0f0f0; /* Example light background */
+}
+
+h1, h2, h3 {
+  margin-top: 0;
+  margin-bottom: 0.5em;
+}
+
+button {
+  cursor: pointer;
+  padding: 6px 12px;
+  margin: 2px;
+}
+
+button:disabled {
+  cursor: not-allowed;
+  opacity: 0.6;
+}
+
+#root {
+  /* Add any overall styling for the app container if needed */
+  /* Example dark theme settings (optional) */
+  /* background-color: rgb(40, 40, 45); */
+  /* color: #eee; */
+  /* padding: 15px; */ /* Add padding if body doesn't have it */
+}
+
+/* Add specific styles for Quest UI, Tier display, Persona Portal etc. */
