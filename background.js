@@ -8,16 +8,15 @@ chrome.runtime.onMessage.addListener((message, sender, sendResponse) => {
   if (message.type === 'ANALYZE_PAGE_DATA') {
     const pageContext = message.context;
     if (pageContext && pageContext.url && pageContext.title) {
-      // Refined system prompt that forces the AI to output ONLY the valid JSON object.
+      // Updated system prompt: Request keywords and a sequence of survey questions.
       const system_prompt = `You are an AI assistant analyzing web page context (URL, Title, Content) for personalization. Perform two tasks:
-1. Extract the main keywords or topics (max 5, comma-separated, e.g., "React, JavaScript, Tutorial"). If none found, use "None".
-2. Generate a single multiple-choice preference/intent poll question related to these topics/content with 3 distinct options (A, B, C). Do not include a correct answer. If a poll cannot be generated, set the poll value to null.
-**Your response MUST be ONLY the valid JSON object specified below.** Do NOT include any conversational text, preamble, explanation, apologies, or markdown formatting like \`\`\`json or \`\`\` outside of the JSON object itself.
-Output JSON structure:
-{"keywords": "extracted, keywords, here", "poll": {"type": "preference_poll", "question": "...", "options": {"A": "...", "B": "...", "C": "..."}}}
-If keyword or poll generation fails, output: {"keywords": "None", "poll": null}`;
+1. Extract the main keywords or topics (max 5, comma-separated). If none found, use "None".
+2. Generate a sequence of 3 to 5 related multiple-choice questions designed to understand the user's preference, opinion, or knowledge gap regarding the main topic identified from the context and keywords. The questions should follow a logical progression if possible. Each question must have 3 distinct options (A, B, C) and should not have a single 'correct' answer verifiable from the text alone (they are for gauging user input).
+Output ONLY a single valid JSON object with the structure:
+{"keywords": "extracted, keywords, here", "surveyQuestions": [ {"q_id": 1, "type": "multiple_choice", "question": "...", "options": {"A": "...", "B": "...", "C": "..."}}, {"q_id": 2, "type": "multiple_choice", "question": "...", "options": {...}}, ... ]}
+Ensure the entire output is valid JSON. Each question object in the array needs a unique 'q_id' starting from 1. If keyword or question generation fails, return {"keywords": "None", "surveyQuestions": []}. Do NOT include preamble or explanations outside the JSON.`;
 
-      const user_prompt = `Generate the keywords and preference poll JSON based on the following page information:
+      const user_prompt = `Generate the keywords and survey questions JSON based on the following page information:
 
 URL: ${pageContext.url || 'N/A'}
 Title: ${pageContext.title || 'N/A'}
@@ -32,7 +31,7 @@ ${pageContext.content || '(No content extracted)'}`;
           { role: "user", content: user_prompt }
         ],
         temperature: 0.7,
-        max_tokens: 300
+        max_tokens: 500
       });
 
       fetch("https://api.groq.com/openai/v1/chat/completions", {
@@ -80,12 +79,13 @@ ${pageContext.content || '(No content extracted)'}`;
             // Attempt to parse the isolated JSON string.
             try {
               const finalJson = JSON.parse(jsonString);
-              if (typeof finalJson.keywords === "string" && finalJson.poll !== undefined) {
+              // Updated validation for new structure: keywords (string) and surveyQuestions (array)
+              if (typeof finalJson.keywords === "string" && Array.isArray(finalJson.surveyQuestions)) {
                 console.log("Background: Sending analysis result:", finalJson);
                 sendResponse({ analysisResult: finalJson });
               } else {
                 console.error("Background: Parsed JSON structure is invalid:", finalJson);
-                sendResponse({ error: 'AI response has invalid structure', details: 'Missing keywords or poll field.' });
+                sendResponse({ error: 'AI response has invalid structure', details: 'Expected "keywords" as a string and "surveyQuestions" as an array.' });
               }
             } catch (e) {
               console.error("Background: Failed to parse extracted JSON content:", e, "--- Extracted String was:", jsonString);
