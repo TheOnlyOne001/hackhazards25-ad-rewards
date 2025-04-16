@@ -10,6 +10,7 @@ const rewardTokenAddress = '0xeB165CaF13A24e5e00fB5779f64A81aD47Ce6d58';
 const questBadgeContractAddress = '0x4475F90A71cb504539Ce1118cC7d343dC65153E7';
 const STORAGE_KEY = 'simulatedRewardsBalance';
 const PERSONA_STORAGE_KEY = 'personaKeywordsList';
+const OWNED_BADGES_STORAGE_KEY = 'ownedBadgeDetails';
 
 function App() {
   const { address, isConnected } = useAccount();
@@ -56,7 +57,8 @@ function App() {
       keywords: ["base", "sepolia", "feedback", "developer experience", "ux", "testnet"],
       type: "feedback",
       questURL: "https://docs.base.org/network-information", // Link to network info / Discord links usually there
-      sbtMetadataURI: "ipfs://placeholder/base_contributor_badge.json" // Added SBT URI
+      sbtMetadataURI: "ipfs://placeholder/base_contributor_badge.json", // Added SBT URI
+      requiredBadgeURI: "ipfs://placeholder/base_defi_explorer_badge.json"
     },
     {
       id: 4,
@@ -184,6 +186,7 @@ function App() {
   // Basic states.
   const [simulatedRewards, setSimulatedRewards] = useState(0);
   const [badgeCount, setBadgeCount] = useState(0);
+  const [ownedBadges, setOwnedBadges] = useState([]);
 
   // Quest (poll) data and analysis.
   const [currentPoll, setCurrentPoll] = useState(null);
@@ -239,6 +242,30 @@ function App() {
           setPersonaKeywords([]);
         }
       });
+    }
+  }, []);
+
+  // Load owned badges from storage
+  useEffect(() => {
+    if (chrome.storage && chrome.storage.local) {
+      chrome.storage.local.get([OWNED_BADGES_STORAGE_KEY], (result) => {
+        if (chrome.runtime.lastError) {
+          console.error("Error loading owned badges:", chrome.runtime.lastError);
+          setOwnedBadges([]); // default to an empty array on error
+        } else {
+          const savedBadges = result[OWNED_BADGES_STORAGE_KEY] || [];
+          if (Array.isArray(savedBadges) && savedBadges.length > 0) {
+            console.log("Owned badges loaded successfully:", savedBadges);
+            setOwnedBadges(savedBadges);
+          } else {
+            console.log("No owned badges found. Defaulting to empty array.");
+            setOwnedBadges([]);
+          }
+        }
+      });
+    } else {
+      console.warn("chrome.storage.local is not available.");
+      setOwnedBadges([]);
     }
   }, []);
 
@@ -307,14 +334,28 @@ function App() {
     return { tierName: tier, rewardMultiplier: multiplier };
   }, [badgeCount]);
 
-  // Derived list of quests to display (filtering by matching persona keywords).
+  // Derived list of quests to display (filtering by matching persona keywords and badge gating).
   const displayedQuests = useMemo(() => {
     if (!personaKeywords || personaKeywords.length === 0) return [];
+    
+    // First step: filter by persona keywords
     const userKeywordsLower = new Set(personaKeywords.map(k => k.toLowerCase()));
-    return MOCK_SPONSORED_QUESTS.filter(quest =>
-      quest.keywords.some(qKeyword => userKeywordsLower.has(qKeyword.toLowerCase()))
-    );
-  }, [personaKeywords]);
+    return MOCK_SPONSORED_QUESTS
+      .filter(quest =>
+        quest.keywords.some(qKeyword => userKeywordsLower.has(qKeyword.toLowerCase()))
+      )
+      // Second step: filter by badge gating requirements
+      .filter(quest => {
+        // Add badge gating - require quest 12 badge before showing quest 3
+        if (quest.id === 3) {
+          const requiredBadgeURI = "ipfs://placeholder/base_defi_explorer_badge.json";
+          // If user doesn't have the required badge, hide this quest
+          return ownedBadges.some(badge => badge.uri === requiredBadgeURI);
+        }
+        // No restrictions on other quests
+        return true;
+      });
+  }, [personaKeywords, ownedBadges]);
 
   // Function to navigate to the Persona Portal view and initialize editor state.
   const goToPersonaPortal = () => {
@@ -425,6 +466,27 @@ function App() {
         if (apiResponse.ok && responseData.success) {
           console.log("Backend mint initiated:", responseData);
           setQuestFeedback(`Badge mint initiated! Tx: ${responseData.transactionHash.substring(0,10)}...`);
+          
+          // Store the badge information if tokenId is available
+          if (responseData.tokenId) {
+            const newBadge = {
+              id: responseData.tokenId,
+              title: "Survey Completion Badge",
+              description: "Earned by completing a multi-question survey",
+              txHash: responseData.transactionHash,
+              timestamp: new Date().toISOString(),
+              metadataURI: metadataURI
+            };
+            
+            const updatedBadges = [...ownedBadges, newBadge];
+            setOwnedBadges(updatedBadges);
+            
+            // Save to storage
+            if (chrome.storage && chrome.storage.local) {
+              chrome.storage.local.set({ [OWNED_BADGES_STORAGE_KEY]: updatedBadges });
+            }
+          }
+          
           setTimeout(() => {
             refetchBadgeCount?.();
             console.log("Refetched badge count after mint.");
@@ -623,6 +685,24 @@ function App() {
       if (apiResponse.ok && responseData.success) {
         console.log("Backend mint initiated:", responseData);
         setQuestFeedback(`Badge mint initiated! Tx: ${responseData.transactionHash.substring(0,10)}...`);
+
+        // Check if tokenId is provided and update owned badges if so.
+        if (responseData.tokenId) {
+          const newBadge = { id: responseData.tokenId, uri: metadataURI };
+          setOwnedBadges(prevBadges => {
+            const updatedBadges = [...prevBadges, newBadge];
+            if (chrome.storage && chrome.storage.local) {
+              chrome.storage.local.set({ [OWNED_BADGES_STORAGE_KEY]: updatedBadges }, () => {
+                if (chrome.runtime.lastError) {
+                  console.error("Error saving owned badges:", chrome.runtime.lastError);
+                } else {
+                  console.log("Owned badges saved successfully:", updatedBadges);
+                }
+              });
+            }
+            return updatedBadges;
+          });
+        }
         setTimeout(() => {
           refetchBadgeCount?.();
           console.log("Refetched badge count after mint.");
@@ -643,85 +723,49 @@ function App() {
     }
   }
 
-  // New function: handle accepting a sponsored quest from the marketplace.
-  const handleAcceptSponsoredQuest = (quest) => {
-    console.log("Accepted sponsored quest:", quest);
+  // Function to handle accepting a sponsored quest from the marketplace
+const handleAcceptSponsoredQuest = (quest) => {
+  console.log("Accepted sponsored quest:", quest.title);
 
-    // Open the quest URL immediately
-    chrome.tabs.create({ url: quest.questURL });
+  // Step 1: Open the quest URL immediately
+  if (quest.questURL && typeof quest.questURL === 'string' && 
+      (quest.questURL.startsWith('http://') || quest.questURL.startsWith('https://'))) {
+    chrome.tabs.create({ url: quest.questURL, active: true }); // Open in new active tab
+  } else {
+    console.warn("Quest URL is missing or invalid, tab not opened:", quest);
+  }
 
-    // Provide immediate feedback to user
-    setQuestFeedback(`Starting '${quest.title}'... Complete the task in the new tab. Processing rewards shortly...`);
+  // Step 2: Update feedback immediately and navigate back to main UI
+  setQuestFeedback(`Starting '${quest.title}'! Complete task in new tab. Processing reward...`);
+  setCurrentView('main'); // Go back immediately so user sees main screen
 
-    // Simulate delay before calculating reward and minting badge (e.g., 10 seconds)
-    setTimeout(() => {
-      // Extract base reward from quest reward string (format "XYZ SBT + X ADR")
-      let baseReward = 5;
-      const rewardParts = quest.reward.split('+');
-      if (rewardParts.length > 1) {
-        const adrPart = rewardParts[1].split(' ')[1];
-        const parsed = parseInt(adrPart);
-        if (!isNaN(parsed)) {
-          baseReward = parsed;
-        }
-      }
-      const actualReward = baseReward * rewardMultiplier;
-
-      // Update simulated rewards
-      const newSimulatedAmount = simulatedRewards + actualReward;
-      setSimulatedRewards(newSimulatedAmount);
-      if (chrome.storage && chrome.storage.local) {
-        chrome.storage.local.set({ [STORAGE_KEY]: newSimulatedAmount });
-      }
-
-      // Generate dynamic metadata URI based on quest type and sponsor
-      const metadataURI = quest.sbtMetadataURI;
-      const backendUrl = 'http://localhost:3001/mint-badge';
-      const secret = import.meta.env.VITE_MINTER_API_SECRET;
-
-      if (!secret) {
-        console.error("Minter API Secret not found!");
-        setQuestFeedback('Error: Missing API configuration.');
-        setTimeout(() => setQuestFeedback(''), 5000);
-        return;
-      }
-
-      // Mint badge via backend
-      fetch(backendUrl, {
-        method: 'POST',
-        headers: {
-          'Content-Type': 'application/json',
-          'X-API-Secret': secret
-        },
-        body: JSON.stringify({
-          recipientAddress: address,
-          metadataURI: metadataURI
-        })
-      })
-      .then(response => response.json())
-      .then(responseData => {
-        if (responseData.success) {
-          console.log("Backend mint initiated:", responseData);
-          setQuestFeedback(`Badge mint initiated! Tx: ${responseData.transactionHash.substring(0,10)}...`);
-          setTimeout(() => {
-            refetchBadgeCount?.();
-            console.log("Refetched badge count after mint.");
-          }, 5000);
-        } else {
-          console.error("Backend mint request failed:", responseData.error);
-          setQuestFeedback(`Mint request failed: ${responseData.error || 'Unknown backend error'}`);
-        }
-      })
-      .catch(networkError => {
-        console.error("Network error calling backend mint API:", networkError);
-        setQuestFeedback('Error: Could not reach minting service.');
-      });
-    }, 10000); // 10-second delay
-
-    // Immediately navigate back to main view while rewards process in background
-    setCurrentView('main');
-    setTimeout(() => setQuestFeedback(''), 5000);
+  // Step 3: Send message to background script to handle the reward processing and minting
+  const messageToSend = {
+    type: 'PROCESS_SPONSORED_QUEST_COMPLETION',
+    questData: {
+      // Make sure quest object has these properties!
+      rewardText: quest.reward, // Note: using quest.reward since that's what we have in the data
+      sbtMetadataURI: quest.sbtMetadataURI || null, // Send null if missing, maybe background check needs update
+      title: quest.title,
+      id: quest.id,
+      sponsor: quest.sponsor,
+      description: quest.description
+    },
+    userAddress: address,
+    currentMultiplier: rewardMultiplier
   };
+  // Log the object structure AND values
+  console.log("App.jsx: Sending PROCESS_SPONSORED_QUEST_COMPLETION message:", JSON.stringify(messageToSend, null, 2)); // <-- ADD THIS DETAILED LOG
+  chrome.runtime.sendMessage(messageToSend, (response) => {
+    // Optional: Log response from background if needed
+    console.log("App.jsx: Received response from background for quest completion:", response);
+  });
+
+  // Step 4: Clear feedback after a delay
+  setTimeout(() => {
+    setQuestFeedback('');
+  }, 5000);
+};
 
   // Existing simulated reward handler.
   function handleRewardClick() {
