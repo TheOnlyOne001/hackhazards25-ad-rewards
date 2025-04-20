@@ -1,22 +1,42 @@
-// src/popup/App.jsx
-import React, { useState, useEffect, useMemo } from 'react';
-import { ConnectWallet } from '@coinbase/onchainkit/wallet';
-import { useAccount, useBalance, useReadContract, useWriteContract } from 'wagmi';
+// src/ppopup/App.jsx
+import React, { useState, useEffect, useMemo, useRef } from 'react';
+import { Wallet } from '@coinbase/onchainkit/wallet';
+import { useAccount, useBalance, useReadContract, useWriteContract, useDisconnect } from 'wagmi';
 import { baseSepolia } from 'wagmi/chains';
 import { formatUnits } from 'viem';
 import QuestBadgeABI from '../../artifacts/contracts/QuestBadge.sol/QuestBadge.json';
-
-const rewardTokenAddress = '0xeB165CaF13A24e5e00fB5779f64A81aD47Ce6d58';
+import ViewRouter from './components/ViewRouter';
+import { Horizon, Asset } from 'stellar-sdk';
+import { MOCK_SPONSORED_QUESTS } from './data/mockQuests.json';
+const rewardTokenAddress = '0x6FDEAC95fe672E19a8759db03d6c24b25d9B8D92';
 const questBadgeContractAddress = '0x4475F90A71cb504539Ce1118cC7d343dC65153E7';
-const STORAGE_KEY = 'simulatedRewardsBalance';
 const PERSONA_STORAGE_KEY = 'personaKeywordsList';
 const OWNED_BADGES_STORAGE_KEY = 'ownedBadgeDetails';
+const GENERIC_SURVEY_BADGE_URI = "ipfs://bafkreihq5jcwvqnqocc6nd3mpxvghzzsa5qn3e5jxtwluturunvdafsucu";
+const GENERIC_BADGE_NAME = "Survey Contributor";
+const GENERIC_BADGE_DESC = "Provided valuable feedback via survey.";
+const GENERIC_BADGE_ICON = "📝";
+const GENERIC_BADGE_RARITY = "Common";
+const COMPLETED_QUESTS_STORAGE_KEY = 'completedQuestIds';
+const SURVEY_HISTORY_KEY = 'surveyResponseHistory';
+const ACTIVE_QUEST_STORAGE_KEY = 'activeQuestState';
+const STELLAR_PK_STORAGE_KEY = 'userStellarPublicKey';
+const STELLAR_ASSET_CODE = "HHBadge";
+const STELLAR_ISSUER_PUBLIC_KEY = "GDPVK6GDAT2E3RICXAFM3XVDSH4QHWOYTOTCOQKZZTDNGH27YYOLMY74";
+const PERSONA_HISTORY_KEY = 'personaAnalysisHistory';
+const SIMULATED_REWARDS_KEY = 'simulatedRewards'; // Add this near your other constants
 
 function App() {
   const { address, isConnected } = useAccount();
 
+  // Move this line inside the function component
+  const [stellarHhBadgeBalance, setStellarHhBadgeBalance] = useState('...');
+
   // Navigation view state: 'main', 'tier', 'persona', 'marketplace'
   const [currentView, setCurrentView] = useState('main');
+  
+  // 1. Interval Ref
+  const timerIntervalRef = useRef(null);
 
   const { data: balanceData, isLoading: isBalanceLoading, refetch } = useBalance({
     address,
@@ -25,166 +45,9 @@ function App() {
   });
 
   // Place this inside the App component scope, before the return statement
-  const MOCK_SPONSORED_QUESTS = [
-    {
-      id: 1, // Changed ID for consistency
-      title: "Optimism L2 Speedrun Challenge",
-      sponsor: "Optimism (Mock)",
-      description: "Try Optimism's Layer 2 tutorial to deploy and interact with a smart contract.",
-      reward: "Optimism Speedrunner SBT + 10 ADR", // Adjusted ADR
-      keywords: ["optimism", "layer 2", "smart contract", "solidity", "speedrun", "tutorial", "scaling"],
-      type: "educational",
-      questURL: "https://docs.optimism.io/builders/tutorials/hello-world", // Official Hello World
-      sbtMetadataURI: "ipfs://placeholder/optimism_speedrunner_badge.json"
-    },
-    {
-      id: 2,
-      title: "Review Solidity Security Best Practices",
-      sponsor: "OpenZeppelin (Mock)",
-      description: "Read OpenZeppelin's guide on common vulnerabilities and best practices.",
-      reward: "Solidity Security Aware SBT + 15 ADR",
-      keywords: ["openzeppelin", "solidity", "security", "smart contract", "auditing", "best practices"],
-      type: "educational",
-      questURL: "https://docs.openzeppelin.com/learn/common-smart-contract-vulnerabilities", // Relevant OZ Learn guide
-      sbtMetadataURI: "ipfs://placeholder/solidity_security_aware_badge.json"
-    },
-    {
-      id: 3,
-      title: "Base Sepolia Testnet Feedback",
-      sponsor: "Base (Mock)",
-      description: "Explore the Base documentation and share feedback via their channels.",
-      reward: "Base Contributor SBT + 8 ADR", // Added SBT
-      keywords: ["base", "sepolia", "feedback", "developer experience", "ux", "testnet"],
-      type: "feedback",
-      questURL: "https://docs.base.org/network-information", // Link to network info / Discord links usually there
-      sbtMetadataURI: "ipfs://placeholder/base_contributor_badge.json", // Added SBT URI
-      requiredBadgeURI: "ipfs://placeholder/base_defi_explorer_badge.json"
-    },
-    {
-      id: 4,
-      title: "Chainlink VRF v2.5 Integration",
-      sponsor: "Chainlink (Mock)",
-      description: "Read the guide on getting random numbers in your contract using VRF v2.5.",
-      reward: "Chainlink VRF User SBT + 12 ADR", // Adjusted ADR
-      keywords: ["chainlink", "vrf", "oracle", "smart contract", "randomness", "tutorial"],
-      type: "educational",
-      questURL: "https://docs.chain.link/vrf/v2-5/subscription/examples/get-a-random-number", // Direct example
-      sbtMetadataURI: "ipfs://placeholder/chainlink_vrf_user_badge.json"
-    },
-    {
-      id: 5,
-      title: "Explore Stellar Assets",
-      sponsor: "Stellar Development Foundation (Mock)",
-      description: "Learn how assets are represented and issued on the Stellar network.",
-      reward: "Stellar Explorer SBT + 10 ADR", // Adjusted reward
-      keywords: ["stellar", "blockchain", "cross-chain", "payments", "assets", "sdf"],
-      type: "educational",
-      questURL: "https://developers.stellar.org/docs/learn/fundamentals/stellar-data-structures/assets", // Found relevant docs page
-      sbtMetadataURI: "ipfs://placeholder/stellar_explorer_badge.json"
-    },
-    {
-      id: 6,
-      title: "Alchemy Ethereum API Quickstart",
-      sponsor: "Alchemy (Mock)",
-      description: "Complete the quickstart guide to make your first Ethereum API call with Alchemy.",
-      reward: "Alchemy API User SBT + 8 ADR", // Adjusted reward
-      keywords: ["alchemy", "api", "developer tools", "ethereum", "rpc", "quickstart"],
-      type: "educational",
-      questURL: "https://docs.alchemy.com/reference/ethereum-api-quickstart", // Official quickstart
-      sbtMetadataURI: "ipfs://placeholder/alchemy_api_user_badge.json"
-    },
-    {
-      id: 7,
-      title: "Groq API Quickstart Challenge",
-      sponsor: "Groq (Mock)",
-      description: "Follow the Groq API quickstart and run your first chat completion.",
-      reward: "Groq Task Master SBT + 10 ADR", // Adjusted reward
-      keywords: ["groq", "ai", "optimization", "machine learning", "hardware", "api", "llm", "quickstart"],
-      type: "challenge",
-      questURL: "https://console.groq.com/docs/quickstart", // Official quickstart
-      sbtMetadataURI: "ipfs://placeholder/groq_task_master_badge.json"
-    },
-    {
-      id: 8,
-      title: "Understanding the Lens Protocol",
-      sponsor: "Lens Protocol (Mock)",
-      description: "Read the introduction to the Lens decentralized social graph.",
-      reward: "Lens Learner SBT + 5 ADR", // Adjusted reward
-      keywords: ["lens protocol", "social graph", "web3 social", "integration", "decentralized", "polygon"],
-      type: "educational",
-      questURL: "https://docs.lens.xyz/v2/docs/what-is-lens", // V2 Docs Overview
-      sbtMetadataURI: "ipfs://placeholder/lens_learner_badge.json"
-    },
-    {
-      id: 9,
-      title: "Find an Open Source Bounty",
-      sponsor: "Gitcoin (Mock)",
-      description: "Explore Gitcoin Bounties and find one related to your skills.",
-      reward: "Gitcoin Explorer SBT + 5 ADR", // Adjusted reward
-      keywords: ["gitcoin", "open source", "contribution", "bounty", "ethereum"],
-      type: "career", // Or exploration
-      questURL: "https://gitcoin.co/explorer", // Explorer page
-      sbtMetadataURI: "ipfs://placeholder/gitcoin_explorer_badge.json"
-    },
-    {
-      id: 10,
-      title: "Thirdweb SDK Getting Started",
-      sponsor: "Thirdweb (Mock)",
-      description: "Follow the Thirdweb TypeScript SDK guide to set up and make a contract call.",
-      reward: "Thirdweb Dev SBT + 8 ADR", // Adjusted reward
-      keywords: ["thirdweb", "sdk", "developer tools", "web3", "react", "typescript"],
-      type: "educational",
-      questURL: "https://portal.thirdweb.com/typescript/v5/getting-started", // Official Getting Started
-      sbtMetadataURI: "ipfs://placeholder/thirdweb_dev_badge.json"
-    },
-    {
-      id: 11, // New diverse examples
-      title: "Python List Comprehension Practice",
-      sponsor: "LearnPython.org (Mock)",
-      description: "Work through the interactive tutorial on Python list comprehensions.",
-      reward: "Pythonista SBT + 5 ADR",
-      keywords: ["python", "programming", "tutorial", "learning", "list comprehension"],
-      type: "educational",
-      questURL: "https://www.learnpython.org/en/List_Comprehensions", // Found tutorial
-      sbtMetadataURI: "ipfs://placeholder/pythonista_badge.json"
-    },
-    {
-      id: 12,
-      title: "Explore DeFi on Base",
-      sponsor: "DeFi Prime (Mock)",
-      description: "Browse the list of active DeFi protocols currently running on the Base network.",
-      reward: "Base DeFi Explorer SBT + 5 ADR",
-      keywords: ["defi", "base", "l2", "dex", "lending", "yield", "aerodrome", "uniswap"],
-      type: "educational",
-      questURL: "https://defiprime.com/base", // Found list
-      sbtMetadataURI: "ipfs://placeholder/base_defi_explorer_badge.json"
-    },
-    {
-      id: 13,
-      title: "Mindful Productivity Techniques",
-      sponsor: "Ness Labs (Mock)",
-      description: "Read about techniques to improve focus and productivity through mindfulness.",
-      reward: "Mindful Worker SBT + 5 ADR",
-      keywords: ["wellness", "mindfulness", "productivity", "focus", "work"],
-      type: "wellness",
-      questURL: "https://nesslabs.com/mindful-productivity-2", // Found article
-      sbtMetadataURI: "ipfs://placeholder/mindful_worker_badge.json"
-    },
-     {
-      id: 14,
-      title: "React Quick Start Guide",
-      sponsor: "React Dev (Mock)",
-      description: "Review the official React documentation quick start guide.",
-      reward: "React Certified SBT + 5 ADR",
-      keywords: ["react", "javascript", "frontend", "web development", "tutorial", "quickstart"],
-      type: "educational",
-      questURL: "https://react.dev/learn",
-      sbtMetadataURI: "ipfs://placeholder/react_certified_badge.json"
-    }
-  ];
+  
 
   // Basic states.
-  const [simulatedRewards, setSimulatedRewards] = useState(0);
   const [badgeCount, setBadgeCount] = useState(0);
   const [ownedBadges, setOwnedBadges] = useState([]);
 
@@ -212,23 +75,37 @@ function App() {
   // Setup write contract hook for minting.
   const { data: mintHash, writeContract } = useWriteContract();
 
-  // Load simulated rewards from storage.
-  useEffect(() => {
-    if (chrome.storage && chrome.storage.local) {
-      chrome.storage.local.get([STORAGE_KEY], (result) => {
-        if (chrome.runtime.lastError) {
-          console.error("Error reading simulated rewards:", chrome.runtime.lastError);
-          setSimulatedRewards(0);
-        } else {
-          const storedValue = result[STORAGE_KEY] || 0;
-          setSimulatedRewards(storedValue);
-        }
-      });
-    }
-  }, []);
+  // Add a new state to track completed quests
+  const [completedQuestIds, setCompletedQuestIds] = useState(new Set());
+  const [showCompletedQuests, setShowCompletedQuests] = useState(false);
 
-  // Load persona keywords from storage.
-  useEffect(() => {
+  // Add these useState hooks along with your other state declarations in App.jsx
+const [activeQuestForVerification, setActiveQuestForVerification] = useState(null);
+const [showVerificationUI, setShowVerificationUI] = useState(false);
+const [currentVerificationMCQ, setCurrentVerificationMCQ] = useState(null);
+const [userVerificationAnswer, setUserVerificationAnswer] = useState('');
+const [verificationTimer, setVerificationTimer] = useState(0);
+const [verificationResult, setVerificationResult] = useState('pending');
+
+  // Add these with your other useState hooks in App.jsx
+const [userStellarPublicKey, setUserStellarPublicKey] = useState('');
+const [stellarPkInput, setStellarPkInput] = useState('');
+const [isSyncingStellar, setIsSyncingStellar] = useState(false);
+
+// Add to App.jsx state variables:
+const [latestStellarTxHash, setLatestStellarTxHash] = useState('');
+
+// Add this state definition with your other state declarations in App.jsx
+const [personaHistory, setPersonaHistory] = useState([]);
+
+// Add this with your other state variables at the top of the App component
+const [simulatedRewards, setSimulatedRewards] = useState(0);
+
+// Add this near other hooks inside your App component
+const { disconnect } = useDisconnect();
+
+// Load persona keywords from storage.
+useEffect(() => {
     if (chrome.storage && chrome.storage.local) {
       chrome.storage.local.get([PERSONA_STORAGE_KEY], (result) => {
         if (!chrome.runtime.lastError && result[PERSONA_STORAGE_KEY]) {
@@ -268,6 +145,86 @@ function App() {
       setOwnedBadges([]);
     }
   }, []);
+
+  // Add this useEffect to load completed quests from storage
+  useEffect(() => {
+    if (chrome.storage && chrome.storage.local) {
+      chrome.storage.local.get([COMPLETED_QUESTS_STORAGE_KEY], (result) => {
+        if (chrome.runtime.lastError) {
+          console.error("Error loading completed quests:", chrome.runtime.lastError);
+        } else {
+          const savedCompletedQuestIds = result[COMPLETED_QUESTS_STORAGE_KEY] || [];
+          if (Array.isArray(savedCompletedQuestIds) && savedCompletedQuestIds.length > 0) {
+            console.log("Loaded completed quests:", savedCompletedQuestIds);
+            setCompletedQuestIds(new Set(savedCompletedQuestIds));
+          }
+        }
+      });
+    }
+  }, []);
+
+  // Add this useEffect near your other useEffect hooks to load active quest data on mount
+
+useEffect(() => {
+  if (chrome.storage && chrome.storage.local) {
+    chrome.storage.local.get([ACTIVE_QUEST_STORAGE_KEY], (result) => {
+      if (chrome.runtime.lastError) {
+        console.error("Error loading active quest state:", chrome.runtime.lastError);
+        return;
+      }
+      
+      const savedQuestState = result[ACTIVE_QUEST_STORAGE_KEY];
+      console.log("Checking for active quest state:", savedQuestState);
+      
+      if (savedQuestState) {
+        // If there's an active quest, set it in state
+        setActiveQuestForVerification(savedQuestState);
+        console.log("Active quest loaded from storage:", savedQuestState.questTitle);
+      }
+    });
+  }
+}, []);
+
+  // Add this useEffect with your other storage-related useEffects
+useEffect(() => {
+  if (chrome.storage && chrome.storage.local) {
+    chrome.storage.local.get([STELLAR_PK_STORAGE_KEY], (result) => {
+      if (chrome.runtime.lastError) {
+        console.error("Error loading Stellar public key:", chrome.runtime.lastError);
+        return;
+      }
+      
+      const savedKey = result[STELLAR_PK_STORAGE_KEY] || '';
+      if (savedKey) {
+        console.log("Loaded Stellar public key from storage");
+        setUserStellarPublicKey(savedKey);
+      } else {
+        console.log("No saved Stellar public key found");
+      }
+    });
+  }
+}, []);
+
+// Add this useEffect near your other storage-related useEffects
+useEffect(() => {
+  if (chrome.storage && chrome.storage.local) {
+    chrome.storage.local.get([PERSONA_HISTORY_KEY], (result) => {
+      if (chrome.runtime.lastError) {
+        console.error("Error reading persona history:", chrome.runtime.lastError);
+        setPersonaHistory([]);
+      } else {
+        const history = result[PERSONA_HISTORY_KEY] || [];
+        if (Array.isArray(history)) {
+          console.log("Loaded persona history with", history.length, "entries");
+          setPersonaHistory(history);
+        } else {
+          console.warn("Invalid persona history format in storage");
+          setPersonaHistory([]);
+        }
+      }
+    });
+  }
+}, []);
 
   // 3. "Next/Finish" Button Timer Logic
   useEffect(() => {
@@ -334,33 +291,102 @@ function App() {
     return { tierName: tier, rewardMultiplier: multiplier };
   }, [badgeCount]);
 
-  // Derived list of quests to display (filtering by matching persona keywords and badge gating).
-  const displayedQuests = useMemo(() => {
-    if (!personaKeywords || personaKeywords.length === 0) return [];
+  // Enhanced keyword matching with partial matching and ranking
+const displayedQuests = useMemo(() => {
+  if (!personaKeywords || personaKeywords.length === 0) return [];
+  
+  const userKeywordsLower = personaKeywords.map(k => k.toLowerCase());
+  
+  // Score each quest by relevance to user keywords
+  const scoredQuests = MOCK_SPONSORED_QUESTS.map(quest => {
+    let score = 0;
+    let matchedKeywords = [];
     
-    // First step: filter by persona keywords
-    const userKeywordsLower = new Set(personaKeywords.map(k => k.toLowerCase()));
-    return MOCK_SPONSORED_QUESTS
-      .filter(quest =>
-        quest.keywords.some(qKeyword => userKeywordsLower.has(qKeyword.toLowerCase()))
-      )
-      // Second step: filter by badge gating requirements
-      .filter(quest => {
-        // Add badge gating - require quest 12 badge before showing quest 3
-        if (quest.id === 3) {
-          const requiredBadgeURI = "ipfs://placeholder/base_defi_explorer_badge.json";
-          // If user doesn't have the required badge, hide this quest
-          return ownedBadges.some(badge => badge.uri === requiredBadgeURI);
+    // Check each quest keyword against user keywords
+    quest.keywords.forEach(questKeyword => {
+      const qkLower = questKeyword.toLowerCase();
+      
+      // Exact matches get highest score
+      if (userKeywordsLower.includes(qkLower)) {
+        score += 10;
+        matchedKeywords.push(questKeyword);
+        return;
+      }
+      
+      // Partial matches (user keyword contains quest keyword or vice versa)
+      for (const userKeyword of userKeywordsLower) {
+        if (userKeyword.includes(qkLower) || qkLower.includes(userKeyword)) {
+          score += 5;
+          matchedKeywords.push(questKeyword);
+          return;
         }
-        // No restrictions on other quests
-        return true;
-      });
-  }, [personaKeywords, ownedBadges]);
+      }
+    });
+    
+    return {
+      ...quest,
+      relevanceScore: score,
+      matchedKeywords: [...new Set(matchedKeywords)] // Deduplicate
+    };
+  });
+  
+  // Filter out quests with no matches, then sort by relevance
+  return scoredQuests
+    .filter(quest => quest.relevanceScore > 0)
+    .sort((a, b) => b.relevanceScore - a.relevanceScore);
+}, [personaKeywords]);
+
+  // Add this useMemo hook after your other useMemo hooks in the App component
+  const badgeCountsByType = useMemo(() => {
+    // Create a map from badge URI to quest type
+    const uriToTypeMap = {};
+    MOCK_SPONSORED_QUESTS.forEach(quest => {
+      if (quest.sbtMetadataURI && quest.type) {
+        uriToTypeMap[quest.sbtMetadataURI] = quest.type;
+      }
+    });
+    
+    // Initialize the counts object
+    const counts = {};
+    
+    // Count badges by type
+    ownedBadges.forEach(badge => {
+      const badgeUri = badge.uri || badge.metadataURI;
+      let type;
+      
+      if (badgeUri === GENERIC_SURVEY_BADGE_URI) {
+        type = 'survey';
+      } else {
+        type = uriToTypeMap[badgeUri] || 'unknown';
+      }
+      
+      // Increment the count for this type
+      counts[type] = (counts[type] || 0) + 1;
+    });
+    
+    return counts;
+  }, [ownedBadges]);
 
   // Function to navigate to the Persona Portal view and initialize editor state.
   const goToPersonaPortal = () => {
     setEditedKeywords([...personaKeywords]); // Copy committed keywords for editing
     setKeywordsToDelete(new Set());
+    
+    // Refresh persona history when navigating to Persona Portal
+    if (chrome.storage && chrome.storage.local) {
+      chrome.storage.local.get([PERSONA_HISTORY_KEY], (result) => {
+        if (chrome.runtime.lastError) {
+          console.error("Error reading persona history:", chrome.runtime.lastError);
+        } else {
+          const history = result[PERSONA_HISTORY_KEY] || [];
+          if (Array.isArray(history)) {
+            console.log("Refreshed persona history with", history.length, "entries");
+            setPersonaHistory(history);
+          }
+        }
+      });
+    }
+    
     setCurrentView('persona');
   };
 
@@ -413,103 +439,127 @@ function App() {
   };
 
   // 6. handleFinishSurvey Function
-  const handleFinishSurvey = async () => {
-    if (currentSurvey && currentSurvey[currentQuestionIndex]) {
-      // Save the final answer for the current question
-      setSurveyAnswers(prevAnswers => ({
-        ...prevAnswers,
-        [currentSurvey[currentQuestionIndex].q_id]: userAnswer
-      }));
-      console.log("Completed Survey Answers:", { ...surveyAnswers, [currentSurvey[currentQuestionIndex].q_id]: userAnswer });
-      
-      // Calculate dynamic reward using baseQuestReward and rewardMultiplier
-      const baseQuestReward = 5; // adjust as needed
-      const actualReward = baseQuestReward * rewardMultiplier;
-      const newSimulatedAmount = simulatedRewards + actualReward;
-      
-      setSimulatedRewards(newSimulatedAmount);
-      if (chrome.storage && chrome.storage.local) {
-        chrome.storage.local.set({ [STORAGE_KEY]: newSimulatedAmount });
+const handleFinishSurvey = async () => {
+  if (currentSurvey && currentSurvey[currentQuestionIndex]) {
+    // Save the final answer for the current question
+    const finalAnswers = {
+      ...surveyAnswers,
+      [currentSurvey[currentQuestionIndex].q_id]: userAnswer
+    };
+    
+    setSurveyAnswers(finalAnswers);
+    console.log("Completed Survey Answers:", finalAnswers);
+    
+    // Create the history entry with timestamp and answers
+    const newHistoryEntry = { 
+      timestamp: Date.now(), 
+      keywords: interestKeywords,
+      answers: finalAnswers,
+      questions: currentSurvey.map(q => ({ 
+        id: q.q_id, 
+        question: q.question,
+        options: q.options 
+      }))
+    };
+    
+    // Add this log to confirm we're attempting to save
+    console.log("Attempting to save survey history entry:", newHistoryEntry);
+    
+    // Save survey answers to storage
+    if (chrome.storage && chrome.storage.local) {
+      try {
+        // Create a standalone function for better error tracking
+        const saveHistoryToStorage = async () => {
+          return new Promise((resolve, reject) => {
+            chrome.storage.local.get([SURVEY_HISTORY_KEY], (result) => {
+              if (chrome.runtime.lastError) {
+                console.error("Error reading survey history:", chrome.runtime.lastError);
+                reject(chrome.runtime.lastError);
+                return;
+              }
+              
+              console.log("Successfully retrieved existing history:", result);
+              
+              // Get existing history or default to empty array
+              const existingHistory = Array.isArray(result[SURVEY_HISTORY_KEY]) ? result[SURVEY_HISTORY_KEY] : [];
+              
+              // Add new entry to the beginning of the array
+              const updatedHistory = [newHistoryEntry, ...existingHistory];
+              
+              // Limit history to the latest 10 entries
+              const limitedHistory = updatedHistory.slice(0, 10);
+              
+              // Log what we're about to save
+              console.log("About to save survey history with length:", limitedHistory.length);
+              
+              // Save the updated history
+              chrome.storage.local.set({ [SURVEY_HISTORY_KEY]: limitedHistory }, () => {
+                if (chrome.runtime.lastError) {
+                  console.error("Error saving survey history:", chrome.runtime.lastError);
+                  reject(chrome.runtime.lastError);
+                } else {
+                  console.log("Survey history saved successfully. Total entries:", limitedHistory.length);
+                  resolve(limitedHistory);
+                }
+              });
+            });
+          });
+        };
+        
+        // Execute the storage function and handle any errors
+        saveHistoryToStorage()
+          .then(history => console.log("Storage operation completed successfully"))
+          .catch(err => console.error("Failed to save survey history:", err));
+      } catch (storageError) {
+        console.error("Exception during storage operation:", storageError);
       }
-      
-      setQuestFeedback(`Survey completed! +${actualReward} ADR Simulated. Requesting Badge Mint...`);
-      
-      // Call the backend mint API (similar to your handleSubmitAnswer logic)
-      const metadataURI = "ipfs://survey_completion_badge_metadata.json";
-      const backendUrl = 'http://localhost:3001/mint-badge';
-      const secret = import.meta.env.VITE_MINTER_API_SECRET;
-      
-      if (!secret) {
-        console.error("Minter API Secret not found!");
-        setQuestFeedback('Error: Missing API configuration.');
-        setTimeout(() => {
-          setQuestFeedback('');
-        }, 2000);
+    } else {
+      console.error("Chrome storage API not available");
+    }
+    
+    // Calculate real PERS reward amount
+    const baseReward = 1; // Changed from 5 to 1
+    const actualReward = baseReward * rewardMultiplier;
+    
+    // Update feedback message to show minting in progress
+    setQuestFeedback(`Survey completed! Minting ${actualReward} PERS tokens...`);
+    
+    // Request PERS distribution through background script
+    chrome.runtime.sendMessage({ 
+      type: 'DISTRIBUTE_PERS_REWARD', 
+      recipientAddress: address, 
+      amountString: actualReward.toString() 
+    }, response => {
+      if (chrome.runtime.lastError) {
+        console.error("Error requesting PERS distribution:", chrome.runtime.lastError);
+        setQuestFeedback(`Survey completed, but PERS distribution failed: ${chrome.runtime.lastError.message}`);
         return;
       }
       
-      try {
-        const apiResponse = await fetch(backendUrl, {
-          method: 'POST',
-          headers: {
-            'Content-Type': 'application/json',
-            'X-API-Secret': secret
-          },
-          body: JSON.stringify({
-            recipientAddress: address,
-            metadataURI: metadataURI
-          })
-        });
+      if (response && response.success) {
+        console.log("PERS distribution request successful:", response);
+        setQuestFeedback(`Success! ${actualReward} PERS tokens minted and added to your wallet. Tx: ${response.transactionHash?.substring(0, 8)}...`);
         
-        const responseData = await apiResponse.json();
-        
-        if (apiResponse.ok && responseData.success) {
-          console.log("Backend mint initiated:", responseData);
-          setQuestFeedback(`Badge mint initiated! Tx: ${responseData.transactionHash.substring(0,10)}...`);
-          
-          // Store the badge information if tokenId is available
-          if (responseData.tokenId) {
-            const newBadge = {
-              id: responseData.tokenId,
-              title: "Survey Completion Badge",
-              description: "Earned by completing a multi-question survey",
-              txHash: responseData.transactionHash,
-              timestamp: new Date().toISOString(),
-              metadataURI: metadataURI
-            };
-            
-            const updatedBadges = [...ownedBadges, newBadge];
-            setOwnedBadges(updatedBadges);
-            
-            // Save to storage
-            if (chrome.storage && chrome.storage.local) {
-              chrome.storage.local.set({ [OWNED_BADGES_STORAGE_KEY]: updatedBadges });
-            }
-          }
-          
-          setTimeout(() => {
-            refetchBadgeCount?.();
-            console.log("Refetched badge count after mint.");
-          }, 5000);
-        } else {
-          console.error("Backend mint request failed:", responseData.error);
-          setQuestFeedback(`Mint request failed: ${responseData.error || 'Unknown error'}`);
-        }
-      } catch (networkError) {
-        console.error("Network error calling backend mint API:", networkError);
-        setQuestFeedback('Error: Could not reach minting service.');
-      } finally {
-        // Reset survey state after processing
-        setCurrentSurvey(null);
-        setCurrentQuestionIndex(0);
-        setSurveyAnswers({});
-        setUserAnswer('');
-        setTimeout(() => {
-          setQuestFeedback('');
-        }, 3000);
+        // Add this line to refresh the balance automatically
+        refetch();
+      } else {
+        console.error("PERS distribution failed:", response?.error || "Unknown error");
+        setQuestFeedback(`Survey completed, but PERS distribution failed: ${response?.error || "Unknown error"}`);
       }
-    }
-  };
+    });
+    
+    // Reset survey state after processing
+    setCurrentSurvey(null);
+    setCurrentQuestionIndex(0);
+    setSurveyAnswers({});
+    setUserAnswer('');
+    
+    // Clear feedback after a delay
+    setTimeout(() => {
+      setQuestFeedback('');
+    }, 7000);
+  }
+};
 
   // Function to start the Crypto Quest.
   async function handleStartQuest() {
@@ -572,43 +622,92 @@ function App() {
               setCurrentSurvey(null);
               return;
             }
+            
             if (response && response.error) {
               console.error("Error from background:", response.error, response.details);
               setQuestFeedback(`Error: ${response.error}`);
               setCurrentSurvey(null);
             } else if (response && response.analysisResult) {
-              const { keywords, surveyQuestions } = response.analysisResult;
-              console.log("Keywords received:", keywords);
-              console.log("Survey Questions received:", surveyQuestions);
-              
-              // Update interestKeywords state
-              const receivedKeywordsString = keywords || 'None';
-              setInterestKeywords(receivedKeywordsString);
-              
-              // Process and update personaKeywords from the received keywords
-              if (receivedKeywordsString.toLowerCase() !== 'none') {
-                const newKeywords = receivedKeywordsString.toLowerCase().split(',')
-                                  .map(k => k.trim()).filter(k => k);
-                if (newKeywords.length > 0) {
-                  setPersonaKeywords(prevKeywords => {
-                    const currentKeywords = Array.isArray(prevKeywords) ? prevKeywords : [];
-                    const combined = [...new Set([...currentKeywords, ...newKeywords])];
-                    // Save to storage (existing logic)
-                    if (chrome.storage && chrome.storage.local) {
-                      chrome.storage.local.set({ [PERSONA_STORAGE_KEY]: combined }, () => {
-                        if(chrome.runtime.lastError) {
-                          console.error("Error saving NEW persona keywords:", chrome.runtime.lastError);
-                        } else {
-                          console.log("Saved NEW persona keywords:", combined);
-                        }
-                      });
+              const { displayKeywords, detailedKeywords, surveyQuestions } = response.analysisResult;
+
+              // 1. Update display keywords
+              setInterestKeywords(
+                Array.isArray(displayKeywords) && displayKeywords.length > 0
+                  ? displayKeywords.join(', ')
+                  : 'None'
+              );
+
+              // 2. Merge detailed keywords into personaKeywords and save to storage
+              if (Array.isArray(detailedKeywords) && detailedKeywords.length > 0) {
+                setPersonaKeywords(prevKeywords => {
+                  const currentKeywords = Array.isArray(prevKeywords) ? prevKeywords : [];
+                  
+                  // Process new detailed keywords
+                  const processedDetailedKeywords = detailedKeywords
+                    .map(k => k.toLowerCase().trim())
+                    .filter(Boolean);
+                  
+                  // Combine and deduplicate with existing keywords
+                  const combinedDetailed = [...new Set([...currentKeywords, ...processedDetailedKeywords])];
+                  
+                  // Save aggregated keywords to storage
+                  if (chrome.storage && chrome.storage.local) {
+                    chrome.storage.local.set({ [PERSONA_STORAGE_KEY]: combinedDetailed }, () => {
+                      if (chrome.runtime.lastError) {
+                        console.error("Error saving persona keywords:", chrome.runtime.lastError);
+                      } else {
+                        console.log("Saved updated persona keywords:", combinedDetailed);
+                      }
+                    });
+                  }
+                  
+                  return combinedDetailed;
+                });
+              }
+
+              // 3. Save analysis history session
+              if ((Array.isArray(displayKeywords) && displayKeywords.length > 0) || 
+                  (Array.isArray(detailedKeywords) && detailedKeywords.length > 0)) {
+                  
+                const newHistoryEntry = { 
+                  timestamp: Date.now(), 
+                  display: displayKeywords || [],
+                  detailed: detailedKeywords || [],
+                  url: pageContext.url,
+                  title: pageContext.title?.substring(0, 100) || 'Untitled'
+                };
+                
+                if (chrome.storage && chrome.storage.local) {
+                  chrome.storage.local.get([PERSONA_HISTORY_KEY], (result) => {
+                    if (chrome.runtime.lastError) {
+                      console.error("Error reading persona history:", chrome.runtime.lastError);
+                      return;
                     }
-                    return combined;
+                    
+                    // Get existing history or default to empty array
+                    const currentHistory = Array.isArray(result[PERSONA_HISTORY_KEY]) 
+                      ? result[PERSONA_HISTORY_KEY] 
+                      : [];
+                    
+                    // Add new entry to the beginning of history
+                    const updatedHistory = [newHistoryEntry, ...currentHistory];
+                    
+                    // Limit history to the latest 20 entries
+                    const limitedHistory = updatedHistory.slice(0, 20);
+                    
+                    // Save the updated history
+                    chrome.storage.local.set({ [PERSONA_HISTORY_KEY]: limitedHistory }, () => {
+                      if (chrome.runtime.lastError) {
+                        console.error("Error saving persona history:", chrome.runtime.lastError);
+                      } else {
+                        console.log("Persona analysis history saved. Total entries:", limitedHistory.length);
+                      }
+                    });
                   });
                 }
               }
-              
-              // Validate surveyQuestions and update survey state variables
+
+              // 4. Update survey questions (keeping existing logic)
               if (Array.isArray(surveyQuestions) && surveyQuestions.length > 0) {
                 setCurrentSurvey(surveyQuestions);
                 setCurrentQuestionIndex(0);
@@ -621,7 +720,7 @@ function App() {
                 setCurrentSurvey(null);
               }
             } else {
-              console.error("Invalid analysis response.");
+              console.error("Invalid analysis response structure", response);
               setQuestFeedback('Error: Invalid analysis data');
               setCurrentSurvey(null);
             }
@@ -641,377 +740,893 @@ function App() {
   async function handleSubmitAnswer() {
     if (!currentPoll || userAnswer === '') return;
     
-    const baseQuestReward = 5;
+    const baseQuestReward = 1; // Changed from 5 to 1
     const actualReward = baseQuestReward * rewardMultiplier;
-    const newSimulatedAmount = simulatedRewards + actualReward;
     
-    setSimulatedRewards(newSimulatedAmount);
-    if (chrome.storage && chrome.storage.local) {
-      chrome.storage.local.set({ [STORAGE_KEY]: newSimulatedAmount });
-    }
-    setQuestFeedback(`Thanks for your input! +${actualReward} ADR Simulated. Requesting Badge Mint...`);
+    // Update feedback message to show minting in progress
+    setQuestFeedback(`Thanks for your input! Minting ${actualReward} PERS tokens...`);
     console.log("User selected answer:", userAnswer, "for poll:", currentPoll?.question);
     
-    const metadataURI = "ipfs://bafkreihq5jcwvqnqocc6nd3mpxvghzzsa5qn3e5jxtwluturunvdafsucu";
-    const backendUrl = 'http://localhost:3001/mint-badge';
-    const secret = import.meta.env.VITE_MINTER_API_SECRET;
-    
-    if (!secret) {
-      console.error("Minter API Secret not found!");
-      setQuestFeedback('Error: Missing API configuration.');
-      setTimeout(() => {
-        setCurrentPoll(null);
-        setQuestFeedback('');
-      }, 2000);
-      setUserAnswer('');
-      return;
-    }
-    
-    try {
-      const apiResponse = await fetch(backendUrl, {
-        method: 'POST',
-        headers: {
-          'Content-Type': 'application/json',
-          'X-API-Secret': secret
-        },
-        body: JSON.stringify({
-          recipientAddress: address,
-          metadataURI: metadataURI
-        })
-      });
-      
-      const responseData = await apiResponse.json();
-      
-      if (apiResponse.ok && responseData.success) {
-        console.log("Backend mint initiated:", responseData);
-        setQuestFeedback(`Badge mint initiated! Tx: ${responseData.transactionHash.substring(0,10)}...`);
-
-        // Check if tokenId is provided and update owned badges if so.
-        if (responseData.tokenId) {
-          const newBadge = { id: responseData.tokenId, uri: metadataURI };
-          setOwnedBadges(prevBadges => {
-            const updatedBadges = [...prevBadges, newBadge];
-            if (chrome.storage && chrome.storage.local) {
-              chrome.storage.local.set({ [OWNED_BADGES_STORAGE_KEY]: updatedBadges }, () => {
-                if (chrome.runtime.lastError) {
-                  console.error("Error saving owned badges:", chrome.runtime.lastError);
-                } else {
-                  console.log("Owned badges saved successfully:", updatedBadges);
-                }
-              });
-            }
-            return updatedBadges;
-          });
-        }
-        setTimeout(() => {
-          refetchBadgeCount?.();
-          console.log("Refetched badge count after mint.");
-        }, 5000);
-      } else {
-        console.error("Backend mint request failed:", responseData.error);
-        setQuestFeedback(`Mint request failed: ${responseData.error || 'Unknown backend error'}`);
+    // Request PERS distribution through background script
+    chrome.runtime.sendMessage({ 
+      type: 'DISTRIBUTE_PERS_REWARD', 
+      recipientAddress: address, 
+      amountString: actualReward.toString() 
+    }, response => {
+      if (chrome.runtime.lastError) {
+        console.error("Error requesting PERS distribution:", chrome.runtime.lastError);
+        setQuestFeedback(`Quiz completed, but PERS distribution failed: ${chrome.runtime.lastError.message}`);
+        return;
       }
-    } catch (networkError) {
-      console.error("Network error calling backend mint API:", networkError);
-      setQuestFeedback('Error: Could not reach minting service.');
-    } finally {
-      setTimeout(() => {
-        setCurrentPoll(null);
-        setQuestFeedback('');
-      }, 3000);
+      
+      if (response && response.success) {
+        console.log("PERS distribution request successful:", response);
+        setQuestFeedback(`Success! ${actualReward} PERS tokens minted and added to your wallet. Tx: ${response.transactionHash?.substring(0, 8)}...`);
+        
+        // Add this line to refresh the balance automatically
+        refetch();
+        
+        // Continue with badge minting as before...
+      } else {
+        console.error("PERS distribution failed:", response?.error || "Unknown error");
+        setQuestFeedback(`Quiz completed, but PERS distribution failed: ${response?.error || "Unknown error"}`);
+      }
+    });
+    
+    // Reset poll state after a delay (keeping feedback visible longer)
+    setTimeout(() => {
+      setCurrentPoll(null);
       setUserAnswer('');
-    }
+    }, 1000);
+    
+    // Keep the success message for a bit longer
+    setTimeout(() => setQuestFeedback(''), 7000);
+    
+    // Remove this line as it's causing an error - simulatedRewards no longer used
+    // chrome.storage.local.set({ [SIMULATED_REWARDS_KEY]: newSimulatedAmount });
   }
 
   // Function to handle accepting a sponsored quest from the marketplace
-const handleAcceptSponsoredQuest = (quest) => {
-  console.log("Accepted sponsored quest:", quest.title);
+async function handleAcceptSponsoredQuest(quest) {
+  console.log("AQ: === Function Start ===", quest.title);
 
-  // Step 1: Open the quest URL immediately
-  if (quest.questURL && typeof quest.questURL === 'string' && 
-      (quest.questURL.startsWith('http://') || quest.questURL.startsWith('https://'))) {
-    chrome.tabs.create({ url: quest.questURL, active: true }); // Open in new active tab
-  } else {
-    console.warn("Quest URL is missing or invalid, tab not opened:", quest);
-  }
-
-  // Step 2: Update feedback immediately and navigate back to main UI
-  setQuestFeedback(`Starting '${quest.title}'! Complete task in new tab. Processing reward...`);
-  setCurrentView('main'); // Go back immediately so user sees main screen
-
-  // Step 3: Send message to background script to handle the reward processing and minting
-  const messageToSend = {
-    type: 'PROCESS_SPONSORED_QUEST_COMPLETION',
-    questData: {
-      // Make sure quest object has these properties!
-      rewardText: quest.reward, // Note: using quest.reward since that's what we have in the data
-      sbtMetadataURI: quest.sbtMetadataURI || null, // Send null if missing, maybe background check needs update
-      title: quest.title,
-      id: quest.id,
-      sponsor: quest.sponsor,
-      description: quest.description
-    },
-    userAddress: address,
-    currentMultiplier: rewardMultiplier
+  // Define the state to save
+  const activeQuestState = {
+    questId: quest.id,
+    startTime: Date.now(),
+    status: 'pending_timer',
+    completionDelaySeconds: quest.completionDelaySeconds || 60,
+    questTitle: quest.title,
+    questKeywords: quest.keywords,
+    rewardText: quest.reward,
+    sbtMetadataURI: quest.sbtMetadataURI || null,
+    verificationMCQ: quest.verificationMCQ || null,
+    verificationTimeLimit: quest.verificationTimeLimit || 30
   };
-  // Log the object structure AND values
-  console.log("App.jsx: Sending PROCESS_SPONSORED_QUEST_COMPLETION message:", JSON.stringify(messageToSend, null, 2)); // <-- ADD THIS DETAILED LOG
-  chrome.runtime.sendMessage(messageToSend, (response) => {
-    // Optional: Log response from background if needed
-    console.log("App.jsx: Received response from background for quest completion:", response);
-  });
+  console.log("AQ: Defined activeQuestState:", JSON.stringify(activeQuestState));
+  
+  // Update feedback & UI immediately (may flash briefly)
+  setQuestFeedback(`Starting '${quest.title}'... Complete task and check back later.`);
+  setCurrentView('main');
 
-  // Step 4: Clear feedback after a delay
-  setTimeout(() => {
-    setQuestFeedback('');
-  }, 5000);
-};
-
-  // Existing simulated reward handler.
-  function handleRewardClick() {
-    const newSimulatedAmount = simulatedRewards + 1;
-    setSimulatedRewards(newSimulatedAmount);
-    if (chrome.storage && chrome.storage.local) {
-      chrome.storage.local.set({ [STORAGE_KEY]: newSimulatedAmount }, () => {
+  try {
+    // 1. Save quest state to storage (promisified)
+    console.log("AQ: Attempting storage.set...");
+    await new Promise((resolve, reject) => {
+      chrome.storage.local.set({ [ACTIVE_QUEST_STORAGE_KEY]: activeQuestState }, () => {
         if (chrome.runtime.lastError) {
-          console.error("Error saving simulated reward:", chrome.runtime.lastError);
+          console.error("AQ: Error SAVING active quest state:", chrome.runtime.lastError.message);
+          reject(chrome.runtime.lastError);
+        } else {
+          console.log("AQ: SUCCESS - storage.set completed.");
+          resolve();
         }
       });
+    });
+
+    // 2. Tell background script to start timer (promisified)
+    console.log("AQ: Attempting runtime.sendMessage START_QUEST_TIMER...");
+    const timerResponse = await new Promise((resolve, reject) => {
+      chrome.runtime.sendMessage(
+        { type: 'START_QUEST_TIMER', questState: activeQuestState },
+        (response) => {
+          if (chrome.runtime.lastError) {
+            console.error("AQ: Error SENDING message:", chrome.runtime.lastError.message);
+            reject(chrome.runtime.lastError);
+          } else {
+            console.log("AQ: Response from background for timer start:", response);
+            resolve(response);
+          }
+        }
+      );
+    });
+    
+    // 3. Now that storage and messaging are complete, open the quest URL tab
+    console.log("AQ: Attempting tabs.create:", quest.questURL);
+    if (quest.questURL && 
+        typeof quest.questURL === 'string' && 
+        (quest.questURL.startsWith('http://') || quest.questURL.startsWith('https://'))) {
+      chrome.tabs.create({ url: quest.questURL, active: true });
+      console.log("AQ: tabs.create executed.");
+    } else {
+      console.warn("AQ: Invalid or missing questURL, tab not opened:", quest);
     }
-    alert(
-      `Simulated reward added!
-      
-To receive the actual 1 ADR token, the contract owner needs to:
-1. Go to the Distributor contract on Base Sepolia Etherscan.
-2. Call the 'distributeRewards' function.
-3. Use recipient address: ${address}
-4. Use amount: 1000000000000000000 (for 1 ADR, assuming 18 decimals)
-5. After the transaction confirms, click 'Refresh Balance' in this popup.
-      
-Contract Address: 0x780AA5Ae2222C82F79c482D6f309936FA80D6277`
-    );
-    console.log("Simulated reward received!");
+    
+  } catch (error) {
+    console.error("AQ: Error in quest acceptance process:", error);
+    setQuestFeedback(`Error starting quest: ${error.message || "Unknown error"}`);
+    // Reset UI after brief delay if there was an error
+    setTimeout(() => setQuestFeedback(''), 3000);
   }
+  
+  console.log("AQ: Function completed.");
+}
 
   const realBalanceFormatted = balanceData ? parseFloat(balanceData.formatted) : 0;
-  const displayBalance = realBalanceFormatted + simulatedRewards;
+  const displayBalance = realBalanceFormatted;
+
+  // Add this function near your other handler functions in App.jsx
+const handleTestStellarSync = async () => {
+  // Test Stellar public key (replace with your actual test account public key)
+  const testStellarPublicKey = "GAWXEWUTUOF2EKWG2DDKWBWENVBVRNKSLCRKMRSXB7NYHZR7M62PRXGN";
+  const backendUrl = 'http://localhost:3001/sync-stellar';
+  const secret = import.meta.env.VITE_MINTER_API_SECRET;
+  
+  if (!secret) {
+    console.error("API Secret not found in environment variables");
+    setQuestFeedback('Error: Missing API configuration.');
+    return;
+  }
+  
+  console.log(`Testing Stellar sync with Base address: ${address}`);
+  setQuestFeedback('Sending Stellar sync request...');
+  
+  try {
+    const response = await fetch(backendUrl, {
+      method: 'POST',
+      headers: {
+        'Content-Type': 'application/json',
+        'X-API-Secret': secret
+      },
+      body: JSON.stringify({
+        baseAddress: address,
+        stellarPublicKey: testStellarPublicKey
+      })
+    });
+    
+    const responseData = await response.json();
+    console.log("Stellar sync response:", responseData);
+    
+    if (response.ok && responseData.success) {
+      setQuestFeedback(`Stellar sync successful: ${responseData.message}`);
+    } else {
+      setQuestFeedback(`Stellar sync failed: ${responseData.error || 'Unknown error'}`);
+    }
+  } catch (error) {
+    console.error("Error during Stellar sync:", error);
+    setQuestFeedback(`Error: ${error.message || 'Could not connect to backend'}`);
+  } finally {
+    // Clear feedback after 5 seconds
+    setTimeout(() => setQuestFeedback(''), 5000);
+  }
+};
+
+  // Add this function near your other handler functions
+const handleStartVerification = () => {
+  console.log("HSV: handleStartVerification called.");
+  
+  if (!activeQuestForVerification) {
+    console.error("HSV: No active quest available for verification");
+    setQuestFeedback("Error: No active quest to verify.");
+    return;
+  }
+  
+  console.log("HSV: Active quest for verification:", activeQuestForVerification);
+
+  // First check if the quest already has an MCQ defined
+  if (activeQuestForVerification.verificationMCQ) {
+    console.log("HSV: Using predefined verification MCQ from quest");
+    // Set up verification UI and state with the predefined MCQ
+    setCurrentVerificationMCQ(activeQuestForVerification.verificationMCQ);
+    setVerificationTimer(activeQuestForVerification.verificationTimeLimit || 60);
+    setUserVerificationAnswer('');
+    setVerificationResult('pending');
+    setShowVerificationUI(true);
+    return;
+  }
+  
+  // If no predefined MCQ, request one from the background
+  const messagePayload = { 
+    type: 'GET_VERIFICATION_MCQ', 
+    topic: activeQuestForVerification.verificationTopic || activeQuestForVerification.questTitle,
+    keywords: activeQuestForVerification.questKeywords 
+  };
+  
+  console.log("HSV: Sending GET_VERIFICATION_MCQ message:", messagePayload);
+  
+  chrome.runtime.sendMessage(messagePayload, (response) => {
+    console.log("HSV: Received response from background for MCQ:", response);
+    
+    if (chrome.runtime.lastError) {
+      console.error("HSV: Error getting verification MCQ:", chrome.runtime.lastError.message);
+      setQuestFeedback("Error: Could not generate verification question.");
+      return;
+    }
+    
+    if (response && response.error) {
+      console.error("HSV: Background script returned error:", response.error);
+      setQuestFeedback(`Error: ${response.error}`);
+      return;
+    }
+    
+    if (response && response.mcqData) {
+      console.log("HSV: Setting currentVerificationMCQ and showing UI.");
+      // Set up verification UI and state
+      setCurrentVerificationMCQ(response.mcqData);
+      setVerificationTimer(activeQuestForVerification.verificationTimeLimit || 60);
+      setUserVerificationAnswer('');
+      setVerificationResult('pending');
+      setShowVerificationUI(true);
+    } else {
+      console.error("HSV: Invalid or missing MCQ data in response");
+      setQuestFeedback("Error: Failed to generate verification question.");
+    }
+  });
+};
+
+  // Add this useEffect hook to handle the countdown timer
+useEffect(() => {
+  let timerId;
+  
+  if (showVerificationUI && verificationTimer > 0) {
+    // start countdown
+    timerIntervalRef.current = setInterval(() => {
+      setVerificationTimer(prev => prev - 1);
+    }, 1000);
+  } else if (showVerificationUI && verificationTimer <= 0) {
+    // timeout handling
+    console.log("Verification timed out");
+    clearInterval(timerIntervalRef.current);
+    setVerificationResult('failed_timeout');
+    setShowVerificationUI(false);
+    setActiveQuestForVerification(null);
+    setQuestFeedback("Time's up! Verification failed.");
+    // clear feedback after a short delay
+    setTimeout(() => setQuestFeedback(''), 3000);
+  }
+
+  return () => {
+    // cleanup on dependency change or unmount
+    if (timerIntervalRef.current) {
+      clearInterval(timerIntervalRef.current);
+    }
+  };
+}, [showVerificationUI, verificationTimer]);
+
+  // Replace the existing handleSubmitVerification function with this fixed version
+const handleSubmitVerification = async () => {
+  // stop the countdown
+  clearInterval(timerIntervalRef.current);
+
+  if (!currentVerificationMCQ || !activeQuestForVerification) {
+    console.error("No verification question or active quest available");
+    return;
+  }
+
+  const isCorrect = userVerificationAnswer === currentVerificationMCQ.correctAnswer;
+  const questId = activeQuestForVerification.questId;
+
+  // Mark quest as completed with verification result
+  if (questId) {
+    console.log(`SV: Marking quest ${questId} as completed with result: ${isCorrect ? 'success' : 'failed'}`);
+    
+    // Create completion object with status
+    const completionData = {
+      id: questId,
+      timestamp: Date.now(),
+      // Make sure this exactly matches what the UI is looking for
+      status: isCorrect ? 'verified_success' : 'verified_failed',
+      title: activeQuestForVerification.questTitle
+    };
+    
+    // Add more logging to help debug
+    console.log(`SV: Setting completion status to: ${isCorrect ? 'verified_success' : 'verified_failed'}`);
+    
+    // Update local state - now storing objects instead of just IDs
+    setCompletedQuestIds(prev => {
+      // Convert existing Set to array of objects if needed
+      const existingCompletions = Array.from(prev).map(id => {
+        if (typeof id === 'object') return id;
+        return { id, status: 'completed' }; // Default for old format
+      });
+      
+      // Remove any existing entries for this quest
+      const filteredCompletions = existingCompletions.filter(item => 
+        typeof item === 'object' ? item.id !== questId : item !== questId
+      );
+      
+      // Add the new completion data
+      const updatedCompletions = [...filteredCompletions, completionData];
+      
+      // Save to storage
+      chrome.storage.local.set({ [COMPLETED_QUESTS_STORAGE_KEY]: updatedCompletions }, () => {
+        if (chrome.runtime.lastError) {
+          console.error("SV: Error saving completed quest data:", chrome.runtime.lastError);
+        } else {
+          console.log("SV: Successfully saved completed quest data:", updatedCompletions);
+        }
+      });
+      
+      // Return new Set with objects
+      return new Set(updatedCompletions);
+    });
+  }
+
+  if (isCorrect) {
+    // Extract reward amount from text (e.g., "XYZ SBT + 10 ADR")
+    let baseQuestReward = 1; // Default if we can't parse
+    const rewardText = activeQuestForVerification.rewardText || '';
+    const rewardMatch = rewardText.match(/(\d+)\s*ADR/i);
+    if (rewardMatch && rewardMatch[1]) {
+      baseQuestReward = parseInt(rewardMatch[1], 10);
+    }
+    
+    // Calculate reward with multiplier
+    const actualReward = baseQuestReward * rewardMultiplier;
+    
+    // Update feedback to show PERS token request is in progress
+    setVerificationResult('passed');
+    setQuestFeedback('Verification passed! Minting PERS reward & Badge...');
+    
+    // Request PERS token distribution
+    chrome.runtime.sendMessage({ 
+      type: 'DISTRIBUTE_PERS_REWARD', 
+      recipientAddress: address, 
+      amountString: actualReward.toString() 
+    }, response => {
+      if (chrome.runtime.lastError) {
+        console.error("Error requesting PERS distribution:", chrome.runtime.lastError);
+        setQuestFeedback(`Verification passed, but PERS distribution failed: ${chrome.runtime.lastError.message}`);
+        return;
+      }
+      
+      if (response && response.success) {
+        console.log("PERS distribution request successful:", response);
+        setQuestFeedback(`Verification passed! ${actualReward} PERS tokens minted. Processing badge...`);
+        refetch();
+      } else {
+        console.error("PERS distribution failed:", response?.error || "Unknown error");
+        setQuestFeedback(`Verification passed, but PERS distribution failed: ${response?.error || "Unknown error"}`);
+      }
+    });
+    
+    // Process badge reward if verification was successful
+    try {
+      const questData = {
+        title: activeQuestForVerification.questTitle || "Unknown Quest",
+        rewardText: activeQuestForVerification.rewardText || `SBT + ${baseQuestReward} ADR`,
+        sbtMetadataURI: activeQuestForVerification.sbtMetadataURI
+      };
+      
+      // Only attempt to mint if we have a metadataURI
+      if (questData.sbtMetadataURI) {
+        console.log("Processing sponsored quest completion for badge:", questData);
+        
+        // Let the background script handle the badge minting
+        chrome.runtime.sendMessage({ 
+          type: 'PROCESS_SPONSORED_QUEST_COMPLETION', 
+          questData, 
+          userAddress: address, 
+          currentMultiplier: rewardMultiplier 
+        }, response => {
+          if (chrome.runtime.lastError) {
+            console.error("Error requesting badge mint:", chrome.runtime.lastError);
+            setQuestFeedback(`PERS reward processed, but badge minting failed: ${chrome.runtime.lastError.message}`);
+            return;
+          }
+          
+          if (response && response.success) {
+            console.log("Badge minting request successful:", response);
+            setQuestFeedback(`Quest complete! PERS reward and badge mint successful.`);
+            
+            if (response.tokenId) {
+              const newBadge = {
+                id: response.tokenId,
+                uri: questData.sbtMetadataURI,
+                title: activeQuestForVerification.questTitle || "Quest Badge",
+                description: `Earned by completing quest: ${activeQuestForVerification.questTitle}`,
+                txHash: response.transactionHash,
+                timestamp: new Date().toISOString()
+              };
+              
+              // Update owned badges
+              setOwnedBadges(prevBadges => {
+                const badges = Array.isArray(prevBadges) ? prevBadges : [];
+                const updatedBadges = [...badges, newBadge];
+                
+                // Save to storage
+                if (chrome.storage && chrome.storage.local) {
+                  chrome.storage.local.set({ [OWNED_BADGES_STORAGE_KEY]: updatedBadges });
+                }
+                
+                return updatedBadges;
+              });
+            }
+            
+            // Refresh badge count after a short delay
+            setTimeout(() => {
+              refetchBadgeCount?.();
+            }, 5000);
+          } else {
+            console.error("Badge minting failed:", response?.error || "Unknown error");
+            setQuestFeedback(`PERS reward processed, but badge minting failed: ${response?.error || 'Unknown error'}`);
+          }
+        });
+      } else {
+        setQuestFeedback(`Quest complete! PERS reward processed (no badge metadata available)`);
+      }
+    } catch (error) {
+      console.error("Error processing badge rewards:", error);
+      setQuestFeedback(`PERS reward processed, but badge processing had an error: ${error.message || "Unknown error"}`);
+    }
+  } else {
+    setVerificationResult('failed_answer');
+    setQuestFeedback(
+      `Verification failed. Correct answer was ${currentVerificationMCQ.correctAnswer}. Quest marked as completed.`
+    );
+  }
+
+  // clear active quest state
+  setActiveQuestForVerification(null);
+  chrome.storage.local.remove(ACTIVE_QUEST_STORAGE_KEY);
+
+  // hide verification UI shortly
+  setTimeout(() => setShowVerificationUI(false), 3000);
+
+  // reset inputs and timer
+  setUserVerificationAnswer('');
+  setVerificationTimer(0);
+
+  // clear feedback after a bit longer
+  setTimeout(() => setQuestFeedback(''), 10000);
+};
+
+  // Add this with your other handler functions in App.jsx
+const handleSaveStellarKey = () => {
+  const key = stellarPkInput.trim();
+  
+  // Simple validation - Stellar public keys start with G and are 56 characters long
+  const isValid = key.startsWith('G') && key.length === 56;
+  
+  if (!isValid) {
+    setQuestFeedback('Invalid Stellar Public Key format.');
+    setTimeout(() => setQuestFeedback(''), 3000);
+    return;
+  }
+  
+  // Save to chrome.storage.local
+  if (chrome.storage && chrome.storage.local) {
+    chrome.storage.local.set({ [STELLAR_PK_STORAGE_KEY]: key }, () => {
+      if (chrome.runtime.lastError) {
+        console.error("Error saving Stellar public key:", chrome.runtime.lastError);
+        setQuestFeedback('Error saving Stellar key.');
+        setTimeout(() => setQuestFeedback(''), 3000);
+        return;
+      }
+      
+      // Update state and provide feedback
+      setUserStellarPublicKey(key);
+      setStellarPkInput(''); // Clear input field
+      setQuestFeedback('Stellar key saved successfully!');
+      setTimeout(() => setQuestFeedback(''), 3000);
+    });
+  } else {
+    setQuestFeedback('Storage not available.');
+    setTimeout(() => setQuestFeedback(''), 3000);
+  }
+};
+
+  // Replace the existing handleSyncToStellar function with this updated version
+const handleSyncToStellar = async () => {
+  if (!userStellarPublicKey) {
+    setQuestFeedback('No Stellar account linked.');
+    setTimeout(() => setQuestFeedback(''), 3000);
+    return;
+  }
+  
+  // Set loading state and initial feedback
+  setIsSyncingStellar(true);
+  setQuestFeedback('Syncing achievements to Stellar...');
+  
+  const backendUrl = 'http://localhost:3001/sync-stellar';
+  const secret = import.meta.env.VITE_MINTER_API_SECRET;
+  
+  if (!secret) {
+    console.error("API Secret not found in environment variables");
+    setQuestFeedback('Error: Missing API configuration.');
+    setIsSyncingStellar(false);
+    setTimeout(() => setQuestFeedback(''), 3000);
+    return;
+  }
+  
+  console.log(`Syncing achievements to Stellar for address: ${address} with badge count: ${badgeCount || 0}`);
+  
+  try {
+    const response = await fetch(backendUrl, {
+      method: 'POST',
+      headers: {
+        'Content-Type': 'application/json',
+        'X-API-Secret': secret
+      },
+      body: JSON.stringify({
+        baseAddress: address,
+        stellarPublicKey: userStellarPublicKey,
+        baseBadgeCount: badgeCount || 0 // Pass the badge count to backend
+      })
+    });
+    
+    const responseData = await response.json();
+    console.log("Stellar sync response:", responseData);
+    
+    if (response.ok && responseData.success) {
+      // Check if any tokens were sent or if already up-to-date
+      if (responseData.stellarTxHash) {
+        // Store the full transaction hash
+        setLatestStellarTxHash(responseData.stellarTxHash); 
+        // Display the shortened version in feedback with amount synced
+        setQuestFeedback(`Success! Synced ${responseData.amountSent || ''} badges to Stellar. Tx: ${responseData.stellarTxHash.substring(0, 8)}...`);
+      } else {
+        // No transaction was needed, already up-to-date
+        setLatestStellarTxHash('');
+        setQuestFeedback(`Stellar balance already up-to-date (${responseData.currentBalance || 0} HHBadge)`);
+      }
+    } else {
+      // Clear transaction hash on error
+      setLatestStellarTxHash('');
+      setQuestFeedback(`Stellar sync failed: ${responseData.error || 'Unknown backend error'}`);
+    }
+  } catch (error) {
+    // Clear transaction hash on error
+    setLatestStellarTxHash('');
+    // Network or other errors
+    console.error("Error during Stellar sync:", error);
+    setQuestFeedback(`Error syncing with Stellar: ${error.message || 'Could not connect to backend'}`);
+  } finally {
+    // Always reset loading state
+    setIsSyncingStellar(false);
+    
+    // Clear feedback after a few seconds
+    setTimeout(() => setQuestFeedback(''), 7000);
+  }
+};
+
+  // Add this effect to fetch the Stellar asset balance when the user's Stellar key changes
+useEffect(() => {
+  if (!isConnected || !userStellarPublicKey) {
+    setStellarHhBadgeBalance('N/A');
+    return;
+  }
+  
+  // Validate Stellar public key format
+  if (!userStellarPublicKey.startsWith('G')) {
+    console.error("Invalid Stellar public key format:", userStellarPublicKey);
+    setStellarHhBadgeBalance('Invalid Key');
+    return;
+  }
+
+  // Make sure the issuer key actually exists before creating the Asset
+  if (!STELLAR_ISSUER_PUBLIC_KEY) {
+    console.error("Missing Stellar issuer public key");
+    setStellarHhBadgeBalance('Config Error');
+    return;
+  }
+
+  setStellarHhBadgeBalance('Loading...');
+  
+  try {
+    // Create Horizon server instance
+    const server = new Horizon.Server('https://horizon-testnet.stellar.org');
+    
+    // Safely create the Asset with error handling
+    let badgeAsset;
+    try {
+      badgeAsset = new Asset(STELLAR_ASSET_CODE, STELLAR_ISSUER_PUBLIC_KEY);
+    } catch (assetErr) {
+      console.error("Invalid issuer for Stellar Asset:", STELLAR_ISSUER_PUBLIC_KEY, assetErr);
+      setStellarHhBadgeBalance('Asset Error');
+      return;
+    }
+    
+    (async () => {
+      try {
+        const account = await server.loadAccount(userStellarPublicKey);
+        
+        const hhBadgeLine = account.balances.find(b => 
+          b.asset_type !== 'native' && 
+          b.asset_code === badgeAsset.getCode() && 
+          b.asset_issuer === badgeAsset.getIssuer()
+        );
+        
+        if (hhBadgeLine) {
+          setStellarHhBadgeBalance(hhBadgeLine.balance);
+        } else {
+          setStellarHhBadgeBalance('0.0');
+        }
+      } catch (error) {
+        console.error("Error fetching Stellar balance:", error);
+        
+        // Check if the error is because the account doesn't exist yet
+        if (error.response && error.response.status === 404) {
+          setStellarHhBadgeBalance('0.0');
+        } else {
+          setStellarHhBadgeBalance('Error');
+        }
+      }
+    })();
+  } catch (sdkError) {
+    console.error("Error initializing Stellar SDK:", sdkError);
+    setStellarHhBadgeBalance('SDK Error');
+  }
+}, [userStellarPublicKey, isConnected]);
+
+  // Add this function to the App component
+
+const refreshPersonaHistory = (historyData) => {
+  if (Array.isArray(historyData)) {
+    console.log("Refreshing persona history with", historyData.length, "entries");
+    setPersonaHistory(historyData);
+  }
+};
 
   return (
-    <div>
-      <h1>Ad Rewards</h1>
-      <ConnectWallet />
+    <div style={{ 
+      maxWidth: '520px', 
+      margin: '0 auto',
+      padding: '12px',
+      borderRadius: '8px',
+      boxShadow: 'none'  // Remove the box shadow
+    }}>
+      <div style={{ 
+  display: 'flex', 
+  justifyContent: 'space-between', 
+  alignItems: 'center',
+  marginBottom: '16px',
+  backgroundColor: '#f8f9fa',
+  borderRadius: '6px',
+  padding: '8px 12px'
+}}>
+  <h1 style={{ 
+    margin: 0, 
+    fontSize: '1.3rem', 
+    color: '#333',
+    fontWeight: 500 
+  }}>
+    Ad Rewards
+  </h1>
+  
+  {isConnected ? (
+    <div style={{
+      display: 'flex',
+      alignItems: 'center',
+      gap: '8px'
+    }}>
+      <span style={{
+        backgroundColor: '#e8f5e9',
+        color: '#2e7d32',
+        padding: '6px 10px',
+        borderRadius: '16px',
+        fontSize: '0.85rem',
+        display: 'flex',
+        alignItems: 'center',
+        gap: '4px'
+      }}>
+        <span style={{ fontSize: '0.75rem' }}>●</span>
+        {address.slice(0,6)}…{address.slice(-4)}
+      </span>
+      
+      <div className="wallet-actions" style={{ display: 'flex' }}>
+    <button 
+      onClick={() => {
+        // Open Coinbase Wallet instead of BaseScan
+        window.open('https://wallet.coinbase.com/assets', '_blank');
+      }}
+      style={{
+        backgroundColor: '#f0f0f0',
+        border: 'none',
+        borderRadius: '4px',
+        padding: '4px 8px',
+        fontSize: '0.8rem',
+        color: '#1976d2',
+        cursor: 'pointer',
+        display: 'flex',
+        alignItems: 'center',
+        gap: '4px',
+        margin: '0 2px'
+      }}
+      title="Open Wallet"
+    >
+      <span style={{ fontSize: '0.7rem' }}>👛</span>
+      Wallet
+    </button>
+    
+    <button 
+      onClick={() => {
+        disconnect();
+        // Also clear wagmi localStorage items and reload for good measure
+        localStorage.removeItem('wagmi.connected');
+        localStorage.removeItem('wagmi.connectors');
+        window.location.reload();
+      }}
+      style={{
+        backgroundColor: '#fff0f0',
+        border: 'none',
+        borderRadius: '4px',
+        padding: '4px 8px',
+        fontSize: '0.8rem',
+        color: '#d32f2f',
+        cursor: 'pointer',
+        display: 'flex',
+        alignItems: 'center',
+        gap: '4px',
+        margin: '0 2px'
+      }}
+      title="Disconnect wallet"
+    >
+      <span style={{ fontSize: '0.7rem' }}>🔒</span>
+      Logout
+    </button>
+  </div>
+</div>
+  ) : (
+    <Wallet
+      render={({ open }) => (
+        <button
+          onClick={open}
+          style={{
+            padding: '6px 12px',
+            borderRadius: '4px',
+            backgroundColor: '#6050dc',
+            color: 'white',
+            border: 'none',
+            cursor: 'pointer',
+            fontSize: '0.9rem',
+            fontWeight: 500
+          }}
+        >
+          Connect Wallet
+        </button>
+      )}
+    />
+  )}
+</div>
+
+      
       {isConnected && address && (
-        <div>
-          <p style={{ marginBottom: '5px' }}>Connected: {address}</p>
-          <p style={{ marginBottom: '10px' }}>
-            {isBalanceLoading
-              ? 'Fetching balance...'
-              : balanceData
-              ? `Balance: ${displayBalance.toFixed(4)} ${balanceData.symbol}`
-              : 'Balance not available'}
-            <span style={{ fontSize: '10px', marginLeft: '5px' }}>
-              (Includes simulated)
-            </span>
-          </p>
-          {/* SBT Badge Count */}
-          <p>
-            Badges Owned: {isLoadingBadgeCount ? 'Loading...' : badgeCount}
-            {badgeCountError ? ` (Error: ${badgeCountError.shortMessage || badgeCountError.message})` : ''}
-          </p>
-          {/* Gamification Tier Info */}
-          <p style={{ fontWeight: 'bold' }}>
-            Current Tier: {tierName} ({rewardMultiplier}x Rewards)
-          </p>
-          {/* Detected Keywords */}
+        <>
+          {/* shared header info */}
+          <div style={{
+  display: 'grid',
+  gridTemplateColumns: '1fr 1fr',
+  gap: '12px',
+  marginBottom: '16px'
+}}>
+  <div style={{
+    backgroundColor: '#f0f7ff',
+    borderRadius: '8px',
+    padding: '10px',
+    display: 'flex',
+    flexDirection: 'column'
+  }}>
+    <span style={{ fontSize: '0.8rem', color: '#666' }}>PERS Balance</span>
+    <span style={{ fontSize: '1.2rem', fontWeight: 'bold' }}>
+      {isBalanceLoading
+        ? '...'
+        : balanceData
+        ? `${parseFloat(balanceData.formatted).toFixed(2)}`
+        : '0.00'}
+    </span>
+  </div>
+  
+  <div style={{
+    backgroundColor: '#f0fff9',
+    borderRadius: '8px',
+    padding: '10px',
+    display: 'flex',
+    flexDirection: 'column'
+  }}>
+    <span style={{ fontSize: '0.8rem', color: '#666' }}>Badges</span>
+    <div style={{ display: 'flex', alignItems: 'flex-end', justifyContent: 'space-between' }}>
+      <span style={{ fontSize: '1.2rem', fontWeight: 'bold' }}>
+        {isLoadingBadgeCount ? '...' : badgeCount}
+      </span>
+      <span style={{ fontSize: '0.8rem', color: '#2e7d32' }}>
+        {tierName} ({rewardMultiplier}x)
+      </span>
+    </div>
+  </div>
+</div>
           <p>Detected Keywords: {isLoadingQuest ? 'Loading...' : (interestKeywords || 'None')}</p>
           
-          {currentView === 'main' ? (
-            <>
-              <button onClick={handleRewardClick} style={{ marginRight: '10px', padding: '5px 10px', marginTop: '15px' }}>
-                View Ad & Get 1 ADR (Simulated)
-              </button>
-              <button onClick={() => refetch()} style={{ padding: '5px 10px', marginTop: '15px' }}>
-                Refresh Balance
-              </button>
-              <button onClick={handleStartQuest} disabled={isLoadingQuest} style={{ padding: '5px 10px', marginTop: '15px', marginLeft: '10px' }}>
-                Start Crypto Quest!
-              </button>
-              <button onClick={() => setCurrentView('tier')} style={{ padding: '5px 10px', marginTop: '15px', marginLeft: '10px' }}>
-                View Tier Progress
-              </button>
-              <button onClick={goToPersonaPortal} style={{ padding: '5px 10px', marginTop: '15px', marginLeft: '10px' }}>
-                Manage Persona
-              </button>
-              <button onClick={() => setCurrentView('marketplace')} style={{ padding: '5px 10px', marginTop: '15px', marginLeft: '10px' }}>
-                Quest Marketplace
-              </button>
-              
-              {/* 4. Survey Question Display JSX */}
-              {currentSurvey && currentQuestionIndex < currentSurvey.length && (
-                <div style={{ border: '1px solid green', padding: '10px', marginTop: '15px' }}>
-                  <h3>Survey Question {currentSurvey[currentQuestionIndex].q_id}</h3>
-                  <p>{currentSurvey[currentQuestionIndex].question}</p>
-                  <div>
-                    {Object.entries(currentSurvey[currentQuestionIndex].options).map(([key, value]) => (
-                      <div key={key}>
-                        <input
-                          type="radio"
-                          id={`survey_option_${key}`}
-                          name="surveyAnswer"
-                          value={key}
-                          checked={userAnswer === key}
-                          onChange={(e) => setUserAnswer(e.target.value)}
-                        />
-                        <label htmlFor={`survey_option_${key}`}>{key}: {value}</label>
-                      </div>
-                    ))}
-                  </div>
-                  <div style={{ marginTop: '10px' }}>
-                    {currentQuestionIndex < currentSurvey.length - 1 ? (
-                      <button
-                        onClick={handleNextQuestion}
-                        disabled={!isNextButtonEnabled || !userAnswer}
-                      >
-                        Next Question
-                      </button>
-                    ) : (
-                      <button
-                        onClick={handleFinishSurvey}
-                        disabled={!isNextButtonEnabled || !userAnswer}
-                      >
-                        Finish Survey
-                      </button>
-                    )}
-                  </div>
-                  {questFeedback && (
-                    <p style={{ marginTop: '5px', color: questFeedback.startsWith('Thanks') ? 'green' : 'red' }}>
-                      {questFeedback}
-                    </p>
-                  )}
-                </div>
-              )}
-              
-              {currentPoll && !currentSurvey && (
-                <div style={{ border: '1px solid blue', padding: '10px', marginTop: '15px' }}>
-                  <h3>Crypto Quest!</h3>
-                  <p>{currentPoll.question}</p>
-                  {((currentPoll.type === 'multiple_choice') || (currentPoll.type === 'preference_poll')) && currentPoll.options ? (
-                    <div>
-                      {Object.entries(currentPoll.options).map(([key, value]) => (
-                        <div key={key}>
-                          <input
-                            type="radio"
-                            id={`poll_option_${key}`}
-                            name="pollAnswer"
-                            value={key}
-                            checked={userAnswer === key}
-                            onChange={(e) => setUserAnswer(e.target.value)}
-                          />
-                          <label htmlFor={`poll_option_${key}`}>
-                            {key}: {value}
-                          </label>
-                        </div>
-                      ))}
-                    </div>
-                  ) : (
-                    <p>No options available. The generated poll might be invalid.</p>
-                  )}
-                  <button onClick={handleSubmitAnswer} style={{ marginTop: '10px' }}>
-                    Submit Answer
-                  </button>
-                  {questFeedback && (
-                    <p style={{ marginTop: '5px', color: questFeedback.startsWith('Thanks') ? 'green' : 'red' }}>
-                      {questFeedback}
-                    </p>
-                  )}
-                </div>
-              )}
-            </>
-          ) : currentView === 'tier' ? (
-            <>
-              <h2>Tier Progress</h2>
-              <p>Your Current Tier: {tierName} ({rewardMultiplier}x Rewards)</p>
-              <p>Badges Owned: {badgeCount}</p>
-              <p>All Tiers:</p>
-              <ul>
-                <li>Bronze: 0 Badges (1x)</li>
-                <li>Silver: 1-2 Badges (1.5x)</li>
-                <li>Gold: 3-4 Badges (2x)</li>
-                <li>Master: 5-9 Badges (2.5x)</li>
-                <li>Grandmaster: 10+ Badges (3x)</li>
-              </ul>
-              <button onClick={() => setCurrentView('main')} style={{ marginTop: '15px', padding: '5px 10px' }}>
-                &lt; Back to Main
-              </button>
-            </>
-          ) : currentView === 'persona' ? (
-            <>
-              <h2>Persona Portal</h2>
-              <p>Keywords influencing your personalization:</p>
-              {editedKeywords.length > 0 ? (
-                <ul style={{ listStyle: 'none', padding: 0 }}>
-                  {editedKeywords.map((keyword, index) => {
-                    const isMarked = keywordsToDelete.has(keyword);
-                    return (
-                      <li key={index} style={{ display: 'inline-block', background: '#eee', padding: '2px 6px', margin: '3px', borderRadius: '3px', textDecoration: isMarked ? 'line-through' : 'none', color: isMarked ? 'grey' : 'black' }}>
-                        {keyword}
-                        {isMarked ? (
-                          <button
-                            onClick={() => handleUndoDeletion(keyword)}
-                            style={{ marginLeft: '8px', background: 'none', border: 'none', color: 'blue', cursor: 'pointer', fontWeight: 'bold' }}
-                            title={`Undo removal of "${keyword}"`}
-                          >
-                            ↩
-                          </button>
-                        ) : (
-                          <button
-                            onClick={() => handleMarkForDeletion(keyword)}
-                            style={{ marginLeft: '8px', background: 'none', border: 'none', color: 'red', cursor: 'pointer', fontWeight: 'bold' }}
-                            title={`Remove keyword: ${keyword}`}
-                          >
-                            &times;
-                          </button>
-                        )}
-                      </li>
-                    );
-                  })}
-                </ul>
+          <p>
+            Stellar Badges: {
+              stellarHhBadgeBalance === 'Loading...' ? (
+                <span style={{ fontSize: '0.9em', color: '#666' }}>Loading...</span>
+              ) : stellarHhBadgeBalance === 'Error' ? (
+                <span style={{ color: '#d32f2f' }}>Error loading</span>
               ) : (
-                <p>No keywords saved yet. Analyze pages to build your profile!</p>
-              )}
-              <div style={{ marginTop: '15px' }}>
-                <button onClick={handleSaveChanges} style={{ padding: '5px 10px', marginRight: '10px' }}>
-                  Save Changes
-                </button>
-                <button onClick={() => setCurrentView('main')} style={{ padding: '5px 10px' }}>
-                  Cancel
-                </button>
-              </div>
-            </>
-          ) : currentView === 'marketplace' ? (
-            <>
-              <h2>Quest Marketplace</h2>
-              {displayedQuests.length > 0 ? (
-                displayedQuests.map(quest => (
-                  <div key={quest.id} style={{ border: '1px solid #ccc', padding: '10px', margin: '10px 0' }}>
-                    <h3>{quest.title}</h3>
-                    <p><strong>Sponsor:</strong> {quest.sponsor}</p>
-                    <p>{quest.description}</p>
-                    <p><strong>Reward:</strong> {quest.reward}</p>
-                    <button onClick={() => handleAcceptSponsoredQuest(quest)} style={{ padding: '5px 10px', marginTop: '5px' }}>
-                      Accept Quest
-                    </button>
-                  </div>
-                ))
-              ) : (
-                <p>No specific quests match your current profile. Keep exploring and analyzing pages!</p>
-              )}
-              <button onClick={() => setCurrentView('main')} style={{ marginTop: '15px', padding: '5px 10px' }}>
-                &lt; Back
-              </button>
-            </>
-          ) : null}
-        </div>
+                <span>
+                  {stellarHhBadgeBalance} {STELLAR_ASSET_CODE}
+                  <span style={{ fontSize: '0.8em', color: '#666', marginLeft: '4px' }}>
+                    (Testnet)
+                  </span>
+                </span>
+              )
+            }
+          </p>
+
+          {/* pass all state & handlers down to ViewRouter */}
+          <ViewRouter
+            currentView={currentView}
+            setCurrentView={setCurrentView}
+            tierName={tierName}
+            rewardMultiplier={rewardMultiplier}
+            badgeCount={badgeCount}
+            personaKeywords={personaKeywords}
+            handleMarkForDeletion={handleMarkForDeletion}
+            handleUndoDeletion={handleUndoDeletion}
+            handleSaveChanges={handleSaveChanges}
+            editedKeywords={editedKeywords}
+            keywordsToDelete={keywordsToDelete}
+            displayedQuests={displayedQuests}
+            handleAcceptSponsoredQuest={handleAcceptSponsoredQuest}
+            currentSurvey={currentSurvey}
+            currentQuestionIndex={currentQuestionIndex}
+            userAnswer={userAnswer}
+            setUserAnswer={setUserAnswer}
+            handleNextQuestion={handleNextQuestion}
+            handleFinishSurvey={handleFinishSurvey}
+            isNextButtonEnabled={isNextButtonEnabled}
+            showVerificationUI={showVerificationUI}
+            verificationTimer={verificationTimer}
+            currentVerificationMCQ={currentVerificationMCQ}
+            handleSubmitVerification={handleSubmitVerification}
+            isLoadingQuest={isLoadingQuest}
+            handleStartQuest={handleStartQuest}
+            goToPersonaPortal={goToPersonaPortal}
+            questFeedback={questFeedback}
+            refetch={refetch}
+            activeQuestForVerification={activeQuestForVerification}
+            handleStartVerification={handleStartVerification}
+            userVerificationAnswer={userVerificationAnswer}
+            setUserVerificationAnswer={setUserVerificationAnswer}
+            verificationResult={verificationResult}
+            currentPoll={currentPoll}
+            handleSubmitAnswer={handleSubmitAnswer}
+            ownedBadges={ownedBadges}
+            badgeCountsByType={badgeCountsByType}
+            showCompletedQuests={showCompletedQuests}
+            setShowCompletedQuests={setShowCompletedQuests}
+            completedQuestIds={completedQuestIds}
+            questBadgeContractAddress={questBadgeContractAddress}
+            MOCK_SPONSORED_QUESTS={MOCK_SPONSORED_QUESTS}
+            GENERIC_BADGE_ICON={GENERIC_BADGE_ICON}
+            GENERIC_BADGE_NAME={GENERIC_BADGE_NAME}
+            GENERIC_BADGE_DESC={GENERIC_BADGE_DESC}
+            GENERIC_SURVEY_BADGE_URI={GENERIC_SURVEY_BADGE_URI}
+            handleTestStellarSync={handleTestStellarSync}
+            // Include these new props alongside your existing ones
+            userStellarPublicKey={userStellarPublicKey}
+            stellarPkInput={stellarPkInput}
+            setStellarPkInput={setStellarPkInput}
+            handleSaveStellarKey={handleSaveStellarKey}
+            handleSyncToStellar={handleSyncToStellar}
+            isSyncingStellar={isSyncingStellar}
+            latestStellarTxHash={latestStellarTxHash}
+            personaHistory={personaHistory || []}
+            refreshPersonaHistory={refreshPersonaHistory}
+
+          />
+        </>
       )}
     </div>
   );
