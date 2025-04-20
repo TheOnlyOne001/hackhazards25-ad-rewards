@@ -16,6 +16,7 @@ export default function ViewRouter({
   keywordsToDelete,
   displayedQuests,
   handleAcceptSponsoredQuest,
+  handleAcceptSurveyQuest,  // Add this missing prop
   currentSurvey,
   currentQuestionIndex,
   userAnswer,
@@ -61,7 +62,11 @@ export default function ViewRouter({
   latestStellarTxHash,
   stellarHhBadgeBalance,
   personaHistory = [],
-  refreshPersonaHistory
+  refreshPersonaHistory,
+  surveyChapters,
+  currentChapterIndex,
+  chapterIntroShown,
+  handleChapterNavigation
 }) {
   // Add missing state variables
   const [searchQuery, setSearchQuery] = useState('');
@@ -442,26 +447,56 @@ export default function ViewRouter({
           {/* Keep all the existing survey/poll/verification UI components unchanged */}
           {currentSurvey && currentQuestionIndex < currentSurvey.length && (
             <div style={{ border: '1px solid green', padding: '10px', marginTop: '15px' }}>
-              <h3>Survey Question {currentSurvey[currentQuestionIndex].q_id}</h3>
+              {/* Enhanced progress bar with proper sequential numbering */}
+              <div style={{ marginBottom: '15px' }}>
+                <div style={{ 
+                  display: 'flex', 
+                  justifyContent: 'space-between', 
+                  alignItems: 'center',
+                  marginBottom: '5px' 
+                }}>
+                  <span style={{ fontSize: '0.8rem', color: '#666' }}>
+                    Question {currentQuestionIndex + 1} of {currentSurvey.length}
+                  </span>
+                  <span style={{ fontSize: '0.8rem', fontWeight: 'bold', color: '#4caf50' }}>
+                    {Math.round((currentQuestionIndex / Math.max(1, currentSurvey.length - 1)) * 100)}% Complete
+                  </span>
+                </div>
+                <div style={{ 
+                  width: '100%', 
+                  height: '6px', 
+                  backgroundColor: '#e0e0e0', 
+                  borderRadius: '3px',
+                  overflow: 'hidden'
+                }}>
+                  <div style={{ 
+                    width: `${(currentQuestionIndex / Math.max(1, currentSurvey.length - 1)) * 100}%`, 
+                    height: '100%', 
+                    backgroundColor: '#4caf50',
+                    borderRadius: '3px',
+                    transition: 'width 0.3s ease'
+                  }} />
+                </div>
+              </div>
+              
+              {/* Display Question number sequentially rather than using API q_id */}
+              <h3>Survey Question {currentQuestionIndex + 1}</h3>
               <p>{currentSurvey[currentQuestionIndex].question}</p>
               <div>
-                {Object.entries(currentSurvey[currentQuestionIndex].options).map(
-                  ([key, val]) => (
-                    <div key={key}>
-                      <input
-                        type="radio"
-                        id={`survey_option_${key}`}
-                        name="surveyAnswer"
-                        value={key}
-                        checked={userAnswer === key}
-                        onChange={e => setUserAnswer(e.target.value)}
-                      />
-                      <label htmlFor={`survey_option_${key}`}>
-                        {key}: {val}
-                      </label>
-                    </div>
-                  )
-                )}
+                {Object.entries(
+                  currentSurvey[currentQuestionIndex].options || {}
+                ).map(([key, val]) => (
+                  <label key={key} style={{ display: 'block', margin: '4px 0' }}>
+                    <input
+                      type="radio"
+                      name="survey"
+                      value={key}
+                      checked={userAnswer === key}
+                      onChange={e => setUserAnswer(e.target.value)}
+                    />{' '}
+                    {val}
+                  </label>
+                ))}
               </div>
               <div style={{ marginTop: '10px' }}>
                 {currentQuestionIndex < currentSurvey.length - 1 ? (
@@ -640,14 +675,208 @@ export default function ViewRouter({
               )}
             </div>
           )}
+
+          {currentView === 'main' && currentSurvey && surveyChapters.length > 0 && (
+            <div style={{ border: '1px solid #eee', borderRadius: '8px', padding: '16px', marginTop: '16px', boxShadow: '0 2px 4px rgba(0,0,0,0.05)' }}>
+              {!chapterIntroShown ? (
+                // Show the chapter intro/hook
+                <div>
+                  <h3 style={{ color: '#333', marginTop: 0 }}>
+                    Chapter {surveyChapters[currentChapterIndex]?.chapter_id}
+                  </h3>
+                  <p style={{ fontSize: '0.9rem', lineHeight: '1.4' }}>
+                    {surveyChapters[currentChapterIndex]?.intro}
+                  </p>
+                  <button 
+                    onClick={() => handleChapterNavigation('START_CHAPTER')}
+                    style={{
+                      backgroundColor: '#6050dc',
+                      color: 'white',
+                      border: 'none',
+                      borderRadius: '4px',
+                      padding: '8px 16px',
+                      cursor: 'pointer',
+                      fontWeight: 'bold'
+                    }}
+                  >
+                    Start Chapter
+                  </button>
+                </div>
+              ) : (
+                (() => {
+                  const chapter = surveyChapters[currentChapterIndex];
+                  if (!chapter || !chapter.questions || !chapter.questions[currentQuestionIndex]) {
+                    return <p>Loading question...</p>;
+                  }
+                  
+                  const question = chapter.questions[currentQuestionIndex];
+                  // Detect if this is a branching question by looking for "Dive deeper" in options
+                  const isBranch = Object.values(question.options || {})
+                    .some(text => text?.includes('Dive deeper'));
+
+                  // Add progress indicators
+                  const totalChapters = surveyChapters.length;
+                  const totalQuestionsInCurrentChapter = chapter.questions.length;
+                  const currentChapterProgress = (currentQuestionIndex / (totalQuestionsInCurrentChapter - 1)) * 100;
+                  
+                  // Calculate overall progress
+                  const questionsPerChapter = surveyChapters.map(ch => ch.questions.length);
+                  const totalQuestions = questionsPerChapter.reduce((sum, count) => sum + count, 0);
+                  const questionsDoneInPreviousChapters = questionsPerChapter
+                    .slice(0, currentChapterIndex)
+                    .reduce((sum, count) => sum + count, 0);
+                  const overallProgress = ((questionsDoneInPreviousChapters + currentQuestionIndex) / (totalQuestions - 1)) * 100;
+
+                  return (
+                    <div>
+                      {/* Chapter progress indicator */}
+                      <div style={{ marginBottom: '15px' }}>
+                        <div style={{ 
+                          display: 'flex', 
+                          justifyContent: 'space-between', 
+                          alignItems: 'center',
+                          marginBottom: '5px' 
+                        }}>
+                          <span style={{ fontSize: '0.8rem', color: '#666' }}>
+                            Chapter {chapter.chapter_id}/{totalChapters}, Question {currentQuestionIndex + 1}/{totalQuestionsInCurrentChapter}
+                          </span>
+                          <span style={{ fontSize: '0.8rem', fontWeight: 'bold', color: '#6050dc' }}>
+                            {Math.round(overallProgress)}% Complete
+                          </span>
+                        </div>
+                        <div style={{ 
+                          width: '100%', 
+                          height: '6px', 
+                          backgroundColor: '#f0f0f0', 
+                          borderRadius: '3px',
+                          overflow: 'hidden'
+                        }}>
+                          <div style={{ 
+                            width: `${overallProgress}%`, 
+                            height: '100%', 
+                            background: 'linear-gradient(90deg, #6050dc 0%, #8070fa 100%)',
+                            borderRadius: '3px',
+                            transition: 'width 0.3s ease'
+                          }} />
+                        </div>
+                      </div>
+                      
+                      <p style={{ color: '#666', fontSize: '0.8rem', margin: '0 0 8px 0' }}>
+                        Chapter {chapter.chapter_id}, Question {currentQuestionIndex + 1} of {chapter.questions.length}
+                      </p>
+                      <p style={{ fontWeight: 'bold', fontSize: '1rem', margin: '0 0 16px 0' }}>
+                        {question.text}
+                      </p>
+                      
+                      <div style={{ marginBottom: '20px' }}>
+                        {Object.entries(question.options || {}).map(([key, text]) => (
+                          <label 
+                            key={key} 
+                            style={{ 
+                              display: 'block', 
+                              margin: '8px 0',
+                              padding: '10px',
+                              border: userAnswer === key ? '1px solid #6050dc' : '1px solid #e0e0e0',
+                              borderRadius: '6px',
+                              backgroundColor: userAnswer === key ? '#f0f0ff' : '#ffffff',
+                              cursor: 'pointer'
+                            }}
+                          >
+                            <input
+                              type="radio"
+                              name="surveyQuestion"
+                              value={key}
+                              checked={userAnswer === key}
+                              onChange={e => setUserAnswer(e.target.value)}
+                              style={{ marginRight: '8px' }}
+                            />
+                            {text}
+                          </label>
+                        ))}
+                      </div>
+
+                      <div style={{ marginTop: '20px', display: 'flex', justifyContent: 'flex-end' }}>
+                        {isBranch ? (
+                          <div style={{ display: 'flex', gap: '12px' }}>
+                            <button
+                              disabled={!userAnswer}
+                              onClick={() => handleChapterNavigation('BRANCH', 'dive')}
+                              style={{
+                                backgroundColor: !userAnswer ? '#e0e0e0' : '#6050dc',
+                                color: !userAnswer ? '#999' : 'white',
+                                border: 'none',
+                                borderRadius: '4px',
+                                padding: '8px 16px',
+                                cursor: !userAnswer ? 'not-allowed' : 'pointer',
+                                fontWeight: 'bold'
+                              }}
+                            >
+                              Dive Deeper
+                            </button>
+                            <button
+                              onClick={() => handleChapterNavigation('BRANCH', 'skip')}
+                              style={{
+                                backgroundColor: '#f5f5f5',
+                                color: '#333',
+                                border: '1px solid #ddd',
+                                borderRadius: '4px',
+                                padding: '8px 16px',
+                                cursor: 'pointer'
+                              }}
+                            >
+                              Skip Ahead
+                            </button>
+                          </div>
+                        ) : (
+                          <button
+                            disabled={!userAnswer}
+                            onClick={() => handleChapterNavigation('NEXT_QUESTION')}
+                            style={{
+                              backgroundColor: !userAnswer ? '#e0e0e0' : '#6050dc',
+                              color: !userAnswer ? '#999' : 'white', 
+                              border: 'none',
+                              borderRadius: '4px',
+                              padding: '8px 16px',
+                              cursor: !userAnswer ? 'not-allowed' : 'pointer',
+                              fontWeight: 'bold'
+                            }}
+                          >
+                            {currentQuestionIndex < chapter.questions.length - 1 ? 'Next Question' : 
+                             currentChapterIndex < surveyChapters.length - 1 ? 'Next Chapter' : 'Finish Survey'}
+                          </button>
+                        )}
+                      </div>
+                      
+                      {chapter.outro && currentQuestionIndex === chapter.questions.length - 1 && (
+                        <div style={{ 
+                          marginTop: '20px', 
+                          padding: '12px', 
+                          backgroundColor: '#f9f9f9', 
+                          borderLeft: '3px solid #6050dc',
+                          fontStyle: 'italic',
+                          color: '#555'
+                        }}>
+                          <p style={{ margin: 0, fontSize: '0.9rem' }}>{chapter.outro}</p>
+                        </div>
+                      )}
+                    </div>
+                  );
+                })()
+              )}
+            </div>
+          )}
         </>
       ) : currentView === 'tier' ? (
         <>
           <h2>Tier Progress</h2>
-          <p>
-            Your Current Tier: {tierName} ({rewardMultiplier}x Rewards)
-          </p>
-          <p>Badges Owned: {badgeCount}</p>
+          <div style={{ display: 'flex', alignItems: 'flex-end', justifyContent: 'space-between' }}>
+            <span style={{ fontSize: '1.2rem', fontWeight: 'bold' }}>
+              {isLoadingBadgeCount ? '...' : badgeCount}
+            </span>
+            <span style={{ fontSize: '0.8rem', color: '#2e7d32' }}>
+              {tierName} ({rewardMultiplier}x)
+            </span>
+          </div>
           <p>All Tiers:</p>
           <ul>
             <li>Bronze: 0 Badges (1x)</li>
@@ -1053,14 +1282,25 @@ export default function ViewRouter({
               marginBottom: '20px'
             }}>
               {/* Map through and render quest cards here */}
-              {filteredQuests.map(quest => (
-                <QuestCard 
-                  key={quest.id} 
-                  quest={quest} 
-                  handleAcceptSponsoredQuest={handleAcceptSponsoredQuest}
-                  completedQuestIds={completedQuestIds}
-                />
-              ))}
+              {filteredQuests.map(quest => {
+                // Create the handler directly inline to avoid any possible name conflicts
+                const handleQuestStart = () => {
+                  if (quest.type === 'survey') {
+                    handleAcceptSurveyQuest(quest);
+                  } else {
+                    handleAcceptSponsoredQuest(quest);
+                  }
+                };
+
+                return (
+                  <QuestCard
+                    key={quest.id}
+                    quest={quest}
+                    onAccept={handleQuestStart}
+                    completedQuestIds={completedQuestIds}
+                  />
+                );
+              })}
             </div>
           )}
 

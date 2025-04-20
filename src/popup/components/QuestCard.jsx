@@ -1,6 +1,6 @@
 import React from 'react';
 
-export default function QuestCard({ quest, handleAcceptSponsoredQuest, completedQuestIds }) {
+export default function QuestCard({ quest, onAccept, completedQuestIds }) {
   // Proper completed check using completedQuestIds
   const isCompleted = completedQuestIds && (
     completedQuestIds.has(quest.id) || 
@@ -22,6 +22,15 @@ export default function QuestCard({ quest, handleAcceptSponsoredQuest, completed
   };
   
   const typeStyle = questTypeColors[quest.type] || questTypeColors.default;
+
+  // Create a local React handler function that doesn't depend on external functions
+  const handleClick = React.useCallback(() => {
+    if (onAccept && typeof onAccept === 'function') {
+      onAccept();
+    } else {
+      console.error('onAccept prop is not a function or undefined', onAccept);
+    }
+  }, [onAccept]);
   
   return (
     <div
@@ -180,9 +189,9 @@ export default function QuestCard({ quest, handleAcceptSponsoredQuest, completed
         )}
       </div>
       
-      {/* Action Button */}
+      {/* Action Button - Use the React.useCallback handler */}
       <button
-        onClick={() => handleAcceptSponsoredQuest(quest)}
+        onClick={handleClick}
         disabled={isCompleted || quest.isLocked}
         style={{
           width: '100%',

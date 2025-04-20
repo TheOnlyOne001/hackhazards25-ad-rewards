@@ -359,6 +359,26 @@
       "completionDelaySeconds": 30,
       "verificationTopic": "slack emoji upload",
       "requiredBadgeURI": null
+    },
+    {
+      "id": 171,
+      "title": "Coffee Habit Survey",
+      "sponsor": "Acme Coffee Co.",
+      "description": "Help us understand your coffee rituals—25 quick micro‑chapters await!",
+      "rewardText": "Coffee Connoisseur SBT + 5 ADR",
+      "keywords": ["coffee", "beverage", "taste", "survey", "habits"],
+      "type": "survey",
+      "questURL": "https://survey.acmecoffee.example/habits",
+      "sbtMetadataURI": "ipfs://placeholder/coffee_connoisseur_badge.json",
+      "badgeName": "Coffee Connoisseur",
+      "badgeDescription": "Shared detailed coffee preferences and habits",
+      "badgeIcon": "☕",
+      "badgeRarity": "Common",
+      "completionDelaySeconds": 30,
+      "verificationTopic": null,
+      "requiredBadgeURI": null,
+      "surveyTopic": "coffee preferences",
+      "surveyLength": 25
     }
   ]
 }

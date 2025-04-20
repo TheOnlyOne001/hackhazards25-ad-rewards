@@ -26,6 +26,17 @@ const STELLAR_ISSUER_PUBLIC_KEY = "GDPVK6GDAT2E3RICXAFM3XVDSH4QHWOYTOTCOQKZZTDNG
 const PERSONA_HISTORY_KEY = 'personaAnalysisHistory';
 const SIMULATED_REWARDS_KEY = 'simulatedRewards'; // Add this near your other constants
 
+// Add this at the top of your App() component, before any useState/useEffect calls:
+function sendMessageToBg(msg) {
+  return new Promise((resolve, reject) => {
+    chrome.runtime.sendMessage(msg, res => {
+      if (chrome.runtime.lastError) return reject(chrome.runtime.lastError);
+      if (res && res.error) return reject(new Error(res.error));
+      resolve(res);
+    });
+  });
+}
+
 function App() {
   const { address, isConnected } = useAccount();
 
@@ -56,7 +67,7 @@ function App() {
   const [interestKeywords, setInterestKeywords] = useState('');
 
   // 1. New State Variables for multi-question survey
-  const [currentSurvey, setCurrentSurvey] = useState(null);
+  const [currentSurvey, setCurrentSurvey] = useState([]);
   const [currentQuestionIndex, setCurrentQuestionIndex] = useState(0);
   const [surveyAnswers, setSurveyAnswers] = useState({});
   const [isNextButtonEnabled, setIsNextButtonEnabled] = useState(false);
@@ -103,6 +114,14 @@ const [simulatedRewards, setSimulatedRewards] = useState(0);
 
 // Add this near other hooks inside your App component
 const { disconnect } = useDisconnect();
+
+// Add these state variables after your other survey-related state declarations
+const [surveyChapters, setSurveyChapters] = useState([]);  
+const [currentChapterIndex, setCurrentChapterIndex] = useState(0);  
+const [chapterIntroShown, setChapterIntroShown] = useState(false);  
+
+// Inside your App() component, alongside other useState hooks:
+const [isSurveyLoading, setIsSurveyLoading] = useState(false);
 
 // Load persona keywords from storage.
 useEffect(() => {
@@ -862,6 +881,156 @@ async function handleAcceptSponsoredQuest(quest) {
   console.log("AQ: Function completed.");
 }
 
+// Inside your App() component, alongside handleAcceptSponsoredQuest:
+
+async function handleAcceptSurveyQuest(quest) {
+  console.log("🚀 handleAcceptSurveyQuest()", quest);
+  setCurrentView('main');
+  setQuestFeedback(`Loading "${quest.title}"…`);
+
+  try {
+    const questions = await loadSurveyInBatches(
+      quest.surveyTopic || quest.title,
+      quest.surveyLength || 25,
+      2
+    );
+    console.log("✅ batches done, questions:", questions);
+    // Overwrite state one final time to be sure
+    setCurrentSurvey(questions);
+    setQuestFeedback('Survey loaded! Let’s begin…');
+    setCurrentQuestionIndex(0);
+    setSurveyAnswers({});
+  } catch (err) {
+    console.error("❌ handleAcceptSurveyQuest error:", err);
+    setQuestFeedback('❌ Failed to start survey.');
+  } finally {
+    setTimeout(() => setQuestFeedback(''), 3000);
+  }
+}
+
+async function loadSurveyInBatches(topic, totalQuestions = 25, batchSize = 2) {
+  setIsSurveyLoading(true);
+  let offset = 0;
+  const allQuestions = [];
+  let consecutiveEmptyResponses = 0;
+  const maxConsecutiveEmptyResponses = 3;
+
+  try {
+    while (offset < totalQuestions) {
+      // Add delay between requests to avoid rate limiting
+      if (offset > 0) {
+        await new Promise(resolve => setTimeout(resolve, 1000));
+      }
+      
+      const response = await sendMessageToBg({
+        type: 'INIT_SURVEY_BATCH',
+        topic,
+        batchSize,
+        offset
+      });
+      
+      const questions = response.questions || [];
+      
+      if (questions.length === 0) {
+        console.log(`No questions returned for batch at offset ${offset}. Possibly rate limited.`);
+        consecutiveEmptyResponses++;
+        
+        // If we get too many empty responses in a row, stop the process
+        if (consecutiveEmptyResponses >= maxConsecutiveEmptyResponses) {
+          console.warn("Too many consecutive empty responses. Stopping batch loading.");
+          break;
+        }
+        
+        // Slow down even more on empty responses (possible rate limiting)
+        await new Promise(resolve => setTimeout(resolve, 3000));
+        continue; // Try again with the same offset
+      }
+      
+      // Reset counter when we successfully get questions
+      consecutiveEmptyResponses = 0;
+      
+      // Map API questions to normalized questions with sequential IDs regardless of API response
+      const normalized = questions.map((q, index) => ({
+        // Use current array length + index + 1 to ensure sequential IDs
+        q_id: allQuestions.length + index + 1,
+        // Store original API ID if needed for reference
+        api_q_id: q.q_id,
+        question: q.text,
+        options: q.options || {}
+      }));
+      
+      allQuestions.push(...normalized);
+      setCurrentSurvey([...allQuestions]); 
+      offset += questions.length; // Only increase offset by the number of questions actually received
+    }
+    
+    // If we have at least some questions, consider it a success
+    if (allQuestions.length > 0) {
+      return allQuestions;
+    } else {
+      throw new Error("Failed to load any survey questions");
+    }
+    
+  } catch (err) {
+    console.error("Batch load failed:", err);
+    throw err;
+  } finally {
+    setIsSurveyLoading(false);
+  }
+}
+
+// Add this new function to handle chapter navigation
+const handleChapterNavigation = (action, branchChoice) => {
+  // Save current answer first
+  if (userAnswer) {
+    const currentQuestion = surveyChapters[currentChapterIndex]?.questions[currentQuestionIndex];
+    if (currentQuestion) {
+      setSurveyAnswers(prev => ({
+        ...prev,
+        [currentQuestion.q_id]: userAnswer
+      }));
+    }
+  }
+
+  // Reset user answer for next question
+  setUserAnswer('');
+  
+  // Handle different navigation actions
+  switch(action) {
+    case 'START_CHAPTER':
+      setChapterIntroShown(true);
+      break;
+      
+    case 'NEXT_QUESTION':
+      const currentChapter = surveyChapters[currentChapterIndex];
+      if (currentQuestionIndex < currentChapter.questions.length - 1) {
+        // Move to next question in current chapter
+        setCurrentQuestionIndex(idx => idx + 1);
+      } else if (currentChapterIndex < surveyChapters.length - 1) {
+        // Move to next chapter
+        setCurrentChapterIndex(ch => ch + 1);
+        setCurrentQuestionIndex(0);
+        setChapterIntroShown(false);
+      } else {
+        // End of survey
+        handleFinishSurvey();
+      }
+      break;
+      
+    case 'BRANCH':
+      if (branchChoice === 'dive') {
+        // Stay in current chapter, go to next question
+        setCurrentQuestionIndex(idx => idx + 1);
+      } else {
+        // Skip ahead to next chapter
+        setCurrentChapterIndex(ch => ch + 1);
+        setCurrentQuestionIndex(0);
+        setChapterIntroShown(false);
+      }
+      break;
+  }
+};
+
   const realBalanceFormatted = balanceData ? parseFloat(balanceData.formatted) : 0;
   const displayBalance = realBalanceFormatted;
 
@@ -1378,6 +1547,42 @@ const refreshPersonaHistory = (historyData) => {
   }
 };
 
+// Inside your App() component, below the helper and state declarations:
+async function loadSurveyInBatches(topic, totalQuestions = 25, batchSize = 2) {
+  setIsSurveyLoading(true);
+  let offset = 0;
+  const allQuestions = [];
+
+  try {
+    while (offset < totalQuestions) {
+      const { questions } = await sendMessageToBg({
+        type: 'INIT_SURVEY_BATCH',
+        topic,
+        batchSize,
+        offset
+      });
+
+      // <-- normalize `text` → `question` so your UI sees it
+      const normalized = questions.map(q => ({
+        q_id:    q.q_id,
+        question: q.text,       // <- use the AI’s text as `question`
+        options:  q.options || {}
+      }));
+
+      allQuestions.push(...normalized);
+      setCurrentSurvey([...allQuestions]);
+      offset += batchSize;
+    }
+
+    return allQuestions;
+
+  } catch (err) {
+    console.error("Batch load failed:", err);
+  } finally {
+    setIsSurveyLoading(false);
+  }
+}
+
   return (
     <div style={{ 
       maxWidth: '520px', 
@@ -1536,13 +1741,14 @@ const refreshPersonaHistory = (historyData) => {
   }}>
     <span style={{ fontSize: '0.8rem', color: '#666' }}>Badges</span>
     <div style={{ display: 'flex', alignItems: 'flex-end', justifyContent: 'space-between' }}>
-      <span style={{ fontSize: '1.2rem', fontWeight: 'bold' }}>
-        {isLoadingBadgeCount ? '...' : badgeCount}
-      </span>
-      <span style={{ fontSize: '0.8rem', color: '#2e7d32' }}>
-        {tierName} ({rewardMultiplier}x)
-      </span>
-    </div>
+  <span style={{ fontSize: '1.2rem', fontWeight: 'bold' }}>
+    {isLoadingBadgeCount ? '...' : badgeCount}
+  </span>
+  <span style={{ fontSize: '0.8rem', color: '#2e7d32' }}>
+    {tierName} ({rewardMultiplier}x)
+  </span>
+</div>
+
   </div>
 </div>
           <p>Detected Keywords: {isLoadingQuest ? 'Loading...' : (interestKeywords || 'None')}</p>
@@ -1578,7 +1784,13 @@ const refreshPersonaHistory = (historyData) => {
             editedKeywords={editedKeywords}
             keywordsToDelete={keywordsToDelete}
             displayedQuests={displayedQuests}
+
+            // you already had this:
             handleAcceptSponsoredQuest={handleAcceptSponsoredQuest}
+            // add this line:
+            handleAcceptSurveyQuest={handleAcceptSurveyQuest}
+
+            // …the rest of your props
             currentSurvey={currentSurvey}
             currentQuestionIndex={currentQuestionIndex}
             userAnswer={userAnswer}
@@ -1624,7 +1836,10 @@ const refreshPersonaHistory = (historyData) => {
             latestStellarTxHash={latestStellarTxHash}
             personaHistory={personaHistory || []}
             refreshPersonaHistory={refreshPersonaHistory}
-
+            surveyChapters={surveyChapters}
+            currentChapterIndex={currentChapterIndex}
+            chapterIntroShown={chapterIntroShown}
+            handleChapterNavigation={handleChapterNavigation}
           />
         </>
       )}

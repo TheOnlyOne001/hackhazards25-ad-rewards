@@ -426,9 +426,271 @@ ${pageContext.content || "(no content)"}
       });
   
     return true; // Keep the messaging channel open for asynchronous response.
-  } else {
+  } else if (message.type === 'INIT_SURVEY_QUEST') {
+    console.log("Background: Received INIT_SURVEY_QUEST message:", message);
+    const { questId, topic, length } = message;
+    
+    if (!questId || !topic || !length) {
+      console.error("Background: Missing required fields for INIT_SURVEY_QUEST", message);
+      sendResponse({ error: 'Missing required survey parameters' });
+      return false;
+    }
+    
+    const chapterSize = 5;
+    const chapters = Math.ceil(length / chapterSize);
+    
+    const system_prompt = `
+You are QuestChat-Bot, an AI generating engaging mini-surveys. Create a ${length}-question conversational survey about "${topic}" with the following structure:
+
+1. Divide the survey into ${chapters} chapters of approximately ${chapterSize} questions each.
+2. Each chapter should have:
+   - A brief "intro" hook to engage the user (1-2 sentences)
+   - A set of multiple-choice questions with 3 options each
+3. After chapters 2 and 4 (if applicable), include special branching questions that ask "Would you like to dive deeper into [specific aspect] or skip ahead?" with options "Dive deeper" / "Skip ahead".
+4. End each chapter with a brief 2-sentence "micro-story" transition to maintain engagement.
+
+Your response must be ONLY a valid JSON object with this exact structure:
+{
+  "chapters": [
+    {
+      "chapter_id": 1,
+      "intro": "Welcome to our coffee survey! Let's discover your unique coffee preferences.",
+      "questions": [
+        { 
+          "q_id": 1, 
+          "text": "How do you usually prepare your coffee?", 
+          "options": { 
+            "A": "Drip machine", 
+            "B": "French press", 
+            "C": "Espresso machine" 
+          } 
+        },
+        ...more questions...
+      ],
+      "outro": "As you sip your morning brew, imagine the journey those beans took from distant mountains to your cup. Tomorrow, we'll explore how brewing methods affect your perfect cup."
+    },
+    ...more chapters...
+  ]
+}
+
+Make sure all questions are subjective preference questions without objectively correct answers. Return ONLY the JSON with no additional text.`;
+
+    console.log("Background: Calling Groq API for survey generation...");
+    
+    fetch("https://api.groq.com/openai/v1/chat/completions", {
+      method: "POST",
+      headers: {
+        "Authorization": `Bearer ${GROQ_API_KEY}`,
+        "Content-Type": "application/json"
+      },
+      body: JSON.stringify({
+        model: "llama-3.1-8b-instant",
+        messages: [
+          { role: "system", content: system_prompt }
+        ],
+        temperature: 0.7,
+        max_tokens: 2000
+      })
+    })
+    .then(response => {
+      if (!response.ok) {
+        throw new Error(`HTTP error! status: ${response.status}`);
+      }
+      return response.text();
+    })
+    .then(responseText => {
+      let parsedResponse;
+      try {
+        parsedResponse = JSON.parse(responseText);
+      } catch (e) {
+        console.error("Background: Failed to parse Groq survey response:", e, "Raw response:", responseText);
+        sendResponse({ error: 'Failed to parse Groq response', details: e.message });
+        return;
+      }
+      
+      let generatedContent = parsedResponse.choices &&
+                             parsedResponse.choices[0] &&
+                             parsedResponse.choices[0].message &&
+                             parsedResponse.choices[0].message.content;
+
+      if (generatedContent) {
+        generatedContent = generatedContent.trim();
+        let jsonString = null;
+        const jsonMatch = generatedContent.match(/\{[\s\S]*\}/);
+        if (jsonMatch && jsonMatch[0]) {
+          jsonString = jsonMatch[0];
+        } else {
+          console.warn("Background: Could not find JSON structure in survey response:", generatedContent);
+          jsonString = generatedContent;
+        }
+        try {
+          const surveyData = JSON.parse(jsonString);
+          if (surveyData.chapters && Array.isArray(surveyData.chapters)) {
+            console.log("Background: Successfully generated survey chapters:", surveyData.chapters.length);
+            // Flatten the questions for easier handling in frontend
+            const questions = [];
+            let questionCounter = 1;
+            
+            surveyData.chapters.forEach((chapter, chapterIndex) => {
+              // Add chapter intro as a special question type
+              questions.push({
+                q_id: `ch${chapter.chapter_id}_intro`,
+                type: "chapter_intro",
+                chapter: chapter.chapter_id,
+                text: chapter.intro
+              });
+              
+              // Add regular questions
+              if (Array.isArray(chapter.questions)) {
+                chapter.questions.forEach(question => {
+                  questions.push({
+                    ...question,
+                    chapter: chapter.chapter_id,
+                    q_id: question.q_id || questionCounter++
+                  });
+                });
+              }
+              
+              // Add branching questions after chapters 2 and 4
+              if (chapter.chapter_id === 2 || chapter.chapter_id === 4) {
+                questions.push({
+                  q_id: `ch${chapter.chapter_id}_branch`,
+                  type: "branching",
+                  chapter: chapter.chapter_id,
+                  text: `Would you like to dive deeper into ${topic} or skip ahead?`,
+                  options: {
+                    "A": "Dive deeper",
+                    "B": "Skip ahead"
+                  }
+                });
+              }
+              
+              // Add chapter outro as a special question type
+              if (chapter.outro) {
+                questions.push({
+                  q_id: `ch${chapter.chapter_id}_outro`,
+                  type: "chapter_outro",
+                  chapter: chapter.chapter_id,
+                  text: chapter.outro
+                });
+              }
+            });
+            
+            sendResponse({ 
+              success: true, 
+              questions: questions,
+              rawChapters: surveyData.chapters
+            });
+          } else {
+            console.error("Background: Invalid survey structure:", surveyData);
+            sendResponse({ 
+              error: 'Survey data structure is invalid', 
+              details: 'Expected array of chapters'
+            });
+          }
+        } catch (e) {
+          console.error("Background: Failed to parse survey JSON:", e, "Extracted string:", jsonString);
+          sendResponse({ error: 'Failed to parse survey JSON', details: e.message });
+        }
+      } else {
+        console.error("Background: Could not extract content from Groq survey response");
+        sendResponse({ error: 'Failed to extract survey content from AI response' });
+      }
+    })
+    .catch(error => {
+      console.error("Background: Error during survey generation:", error);
+      sendResponse({ error: 'Failed to generate survey', details: error.message });
+    });
+    
+    return true; // Keep the messaging channel open for asynchronous response.
+  } else if (message.type === 'INIT_SURVEY_BATCH') {
+  const { topic, batchSize, offset } = message;
+  const startId = offset + 1;
+  console.log(`BG: INIT_SURVEY_BATCH for "${topic}", batchSize=${batchSize}, offset=${offset}`);
+
+  const system_prompt = `
+You are QuestChat‑Bot. Generate exactly ${batchSize} detailed, user‑centric multiple‑choice questions about "${topic}".
+Each question must:
+- Have a unique q_id starting at ${startId} (increment by 1).
+- Ask for the user's perspective, challenges, motivations or preferences in depth—avoid generic, surface‑level wording.
+- Include exactly 4 distinct answer options labeled "A" through "D", each representing a plausible user point of view.
+- NOT repeat any question text that you generated in earlier batches.
+
+Return ONLY a JSON array like:
+[
+  {
+    "q_id": ${startId},
+    "text": "In-depth question that probes the user's POV…",
+    "options": {
+      "A": "Option reflecting one perspective",
+      "B": "Option reflecting a different perspective",
+      "C": "Another distinct perspective",
+      "D": "Yet another valid perspective"
+    }
+  },
+  …more questions…
+]
+No extra text before or after the JSON.
+`.trim();
+
+  fetch("https://api.groq.com/openai/v1/chat/completions", {
+    method: "POST",
+    headers: {
+      "Authorization": `Bearer ${GROQ_API_KEY}`,
+      "Content-Type": "application/json"
+    },
+    body: JSON.stringify({
+      model: "llama-3.1-8b-instant",
+      messages: [{ role: "system", content: system_prompt }],
+      temperature: 0.6,
+      max_tokens: 400
+    })
+  })
+  .then(res => {
+    if (!res.ok) {
+      return res.json().then(errorData => {
+        throw new Error(errorData.error?.message || `HTTP error! status: ${res.status}`);
+      });
+    }
+    return res.json();
+  })
+  .then(data => {
+    // Extract content from the response
+    const content = data.choices?.[0]?.message?.content || "";
+    console.log("BG: Raw parsed response content:", content);
+    
+    try {
+      // Parse the content which should be a JSON array
+      const questions = JSON.parse(content);
+      
+      // Validate that we got an array with the expected structure
+      if (!Array.isArray(questions)) {
+        throw new Error("Response is not an array");
+      }
+      
+      if (questions.length === 0) {
+        throw new Error("No questions were generated");
+      }
+      
+      console.log(`BG: Parsed ${questions.length} questions`);
+      sendResponse({ questions });
+    } catch (e) {
+      console.error("INIT_SURVEY_BATCH: failed to parse content as JSON:", e);
+      sendResponse({ questions: [] }); // Return empty array instead of error to allow continuation
+    }
+  })
+  .catch(err => {
+    console.error("BG: INIT_SURVEY_BATCH error:", err);
+    // Return empty array on errors to allow continuation instead of breaking
+    sendResponse({ questions: [] });
+  });
+
+  return true;  // async
+}
+  else {
     sendResponse({ error: 'Unknown message type' });
   }
+  return false;
 });
 
 // Listen for alarms to update quest state
