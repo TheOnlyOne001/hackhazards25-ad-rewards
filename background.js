@@ -1,7 +1,7 @@
 // background.js
 
 // Define your Groq API key here – replace with your actual key.
-const GROQ_API_KEY = "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";
+const GROQ_API_KEY = "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";
 const API_SECRET = "Hkz25!zXcVbNm1jL"; // Secret for backend API calls
 const ACTIVE_QUEST_STORAGE_KEY = 'activeQuestState';
 const OWNED_BADGES_STORAGE_KEY = 'ownedBadgeDetails';

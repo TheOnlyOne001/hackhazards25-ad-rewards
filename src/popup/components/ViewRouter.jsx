@@ -32,6 +32,7 @@ export default function ViewRouter({
   handleStartQuest,
   goToPersonaPortal,
   questFeedback,
+  setQuestFeedback,
   handleRewardClick,
   refetch,
   activeQuestForVerification,
@@ -52,15 +53,6 @@ export default function ViewRouter({
   GENERIC_BADGE_NAME,
   GENERIC_BADGE_DESC,
   GENERIC_SURVEY_BADGE_URI,
-  handleTestStellarSync,
-  userStellarPublicKey,
-  stellarPkInput,
-  setStellarPkInput,
-  handleSaveStellarKey,
-  handleSyncToStellar,
-  isSyncingStellar,
-  latestStellarTxHash,
-  stellarHhBadgeBalance,
   personaHistory = [],
   refreshPersonaHistory,
   surveyChapters,
@@ -73,6 +65,32 @@ export default function ViewRouter({
   const [questTypeFilter, setQuestTypeFilter] = useState('all');
   const [isLoadingQuests, setIsLoadingQuests] = useState(false);
   const [expandedSessionId, setExpandedSessionId] = useState(null);
+  
+  // Safe verification handler to prevent errors
+  const handleStartVerificationSafe = () => {
+    console.log('handleStartVerificationSafe called');
+    console.log('handleStartVerification type:', typeof handleStartVerification);
+    console.log('handleStartVerification value:', handleStartVerification);
+    
+    if (typeof handleStartVerification === 'function') {
+      console.log('Calling handleStartVerification...');
+      handleStartVerification();
+    } else {
+      console.error('handleStartVerification is not defined or not a function');
+      console.error('Available props:', Object.keys(arguments[0] || {}));
+      
+      // Show user feedback if possible
+      if (typeof setQuestFeedback === 'function') {
+        setQuestFeedback('Error: Verification function not available');
+        // Clear the error message after a few seconds
+        setTimeout(() => {
+          if (typeof setQuestFeedback === 'function') {
+            setQuestFeedback('');
+          }
+        }, 3000);
+      }
+    }
+  };
   
   // Calculate filtered quests based on search query and type filter
   const filteredQuests = React.useMemo(() => {
@@ -132,7 +150,7 @@ export default function ViewRouter({
                 Click below to verify your completion and receive your rewards.
               </p>
               <button
-                onClick={handleStartVerification}
+                onClick={handleStartVerificationSafe}
                 style={{
                   backgroundColor: '#ff9800',
                   color: 'white',
@@ -181,228 +199,8 @@ export default function ViewRouter({
               >
                 My Badges
               </button>
-              {/* Add this button after your other main view buttons */}
-              <button
-                onClick={handleTestStellarSync}
-                style={{ padding: '5px 10px', marginTop: '15px', marginLeft: '10px', backgroundColor: '#6050dc', color: 'white' }}
-              >
-                Test Stellar Sync
-              </button>
             </>
           )}
-
-          {/* Stellar account linking section */}
-          <div style={{ 
-            border: '1px solid #6050dc', 
-            borderRadius: '4px',
-            padding: '15px',
-            marginTop: '15px',
-            backgroundColor: '#f8f5ff'
-          }}>
-            <h3 style={{ marginTop: 0, color: '#6050dc' }}>Link Stellar Account (Testnet)</h3>
-            
-            {userStellarPublicKey ? (
-              <>
-                <p>
-                  <strong>Linked Account:</strong> 
-                  <span style={{ 
-                    fontFamily: 'monospace',
-                    backgroundColor: '#e6e6ff',
-                    padding: '4px 8px',
-                    borderRadius: '4px',
-                    marginLeft: '8px'
-                  }}>
-                    {userStellarPublicKey.substr(0, 4)}...{userStellarPublicKey.substr(-4)}
-                  </span>
-                  <button 
-                    onClick={() => {
-                      navigator.clipboard.writeText(userStellarPublicKey);
-                      setQuestFeedback('Key copied to clipboard!');
-                      setTimeout(() => setQuestFeedback(''), 1500);
-                    }}
-                    style={{ 
-                      marginLeft: '8px', 
-                      background: 'none', 
-                      border: 'none', 
-                      cursor: 'pointer',
-                      color: '#6050dc'
-                    }}
-                    title="Copy full key to clipboard"
-                  >
-                    📋
-                  </button>
-                </p>
-                
-                {/* --------- STELLAR SYNC STATUS --------- */}
-                {stellarHhBadgeBalance !== 'Loading...' &&
-                 stellarHhBadgeBalance !== 'Error' &&
-                 !isNaN(Number(stellarHhBadgeBalance)) && (
-                  <>
-                    {/* ONLY show the YELLOW bar when balances differ */}
-                    {Number(stellarHhBadgeBalance) !== badgeCount && (
-                      <div
-                        style={{
-                          display: 'flex',
-                          alignItems: 'center',
-                          gap: '8px',
-                          backgroundColor: '#fff3e0',
-                          color: '#e65100',
-                          padding: '6px 12px',
-                          borderRadius: '4px',
-                          marginTop: '10px',
-                          marginBottom: '10px',
-                          fontSize: '0.9em'
-                        }}
-                      >
-                        <span>ℹ️</span>
-                        <span>
-                          {Number(stellarHhBadgeBalance) < badgeCount ? 
-                            `You need to sync your ${badgeCount - Number(stellarHhBadgeBalance)} new badges to Stellar.` :
-                            `Your Stellar account has ${stellarHhBadgeBalance} badges, but your Base account has ${badgeCount} badges.`
-                          }
-                        </span>
-                      </div>
-                    )}
-
-                    {/* ONLY show the GREEN bar when balances match */}
-                    {Number(stellarHhBadgeBalance) === badgeCount && (
-                      <div
-                        style={{
-                          display: 'flex',
-                          alignItems: 'center',
-                          gap: '8px',
-                          backgroundColor: '#e8f5e9',
-                          color: '#2e7d32',
-                          padding: '6px 12px',
-                          borderRadius: '4px',
-                          marginTop: '10px',
-                          marginBottom: '10px',
-                          fontSize: '0.9em'
-                        }}
-                      >
-                        <span>✓</span>
-                        <span>
-                          Your Stellar account is in sync with your Base achievements ({badgeCount} badges).
-                        </span>
-                      </div>
-                    )}
-                  </>
-                )}
-                
-                {/* Display prominent feedback when syncing completes with transaction link */}
-                {questFeedback && questFeedback.includes('Success! Synced') && (
-                  <div style={{
-                    backgroundColor: '#e8f5e9',
-                    color: '#2e7d32',
-                    padding: '10px 12px',
-                    borderRadius: '4px',
-                    marginTop: '10px',
-                    marginBottom: '10px',
-                    fontWeight: 'bold',
-                    display: 'flex',
-                    flexDirection: 'column',
-                    gap: '8px'
-                  }}>
-                    <div style={{ display: 'flex', alignItems: 'center', gap: '8px' }}>
-                      <span>✅</span> {questFeedback}
-                    </div>
-                    {/* Use the full transaction hash passed as a prop */}
-                    {latestStellarTxHash && (
-                      <a
-                        href={`https://testnet.lumenscan.io/txns/${latestStellarTxHash}`}
-                        target="_blank"
-                        rel="noopener noreferrer"
-                        style={{
-                          color: '#1565c0',
-                          textDecoration: 'none',
-                          fontSize: '0.9em',
-                          display: 'flex',
-                          alignItems: 'center',
-                          width: 'fit-content',
-                          marginTop: '4px'
-                        }}
-                      >
-                        <span style={{ marginRight: '4px' }}>🔍</span> View Transaction on Lumenscan
-                      </a>
-                    )}
-                  </div>
-                )}
-                
-                {/* Show "Already up-to-date" feedback */}
-                {questFeedback && questFeedback.includes('already up-to-date') && (
-                  <div style={{
-                    backgroundColor: '#e8f5e9',
-                    color: '#2e7d32',
-                    padding: '10px 12px',
-                    borderRadius: '4px',
-                    marginTop: '10px',
-                    marginBottom: '10px',
-                    fontWeight: 'bold',
-                    display: 'flex',
-                    alignItems: 'center',
-                    gap: '8px'
-                  }}>
-                    <span>✅</span> {questFeedback}
-                  </div>
-                )}
-                
-                <button
-                  onClick={handleSyncToStellar}
-                  disabled={isSyncingStellar || Number(stellarHhBadgeBalance) === badgeCount}
-                  style={{ 
-                    padding: '8px 16px', 
-                    backgroundColor: Number(stellarHhBadgeBalance) === badgeCount ? '#a5d6a7' : '#6050dc', 
-                    color: 'white', 
-                    border: 'none',
-                    borderRadius: '4px',
-                    cursor: isSyncingStellar || Number(stellarHhBadgeBalance) === badgeCount ? 'not-allowed' : 'pointer',
-                    fontWeight: 'bold',
-                    marginTop: '10px',
-                    display: 'flex',
-                    alignItems: 'center',
-                    justifyContent: 'center',
-                    gap: '8px',
-                    opacity: isSyncingStellar || Number(stellarHhBadgeBalance) === badgeCount ? 0.7 : 1
-                  }}
-                >
-                  <span>{isSyncingStellar ? '🔄' : Number(stellarHhBadgeBalance) === badgeCount ? '✓' : '🌟'}</span> 
-                  {isSyncingStellar ? 'Syncing...' : Number(stellarHhBadgeBalance) === badgeCount ? 'Already In Sync' : 'Sync Achievements to Stellar'}
-                </button>
-              </>
-            ) : (
-              <>
-                <p>Connect your Stellar account to sync your achievements as assets on the Stellar blockchain.</p>
-                <div style={{ display: 'flex', marginTop: '10px' }}>
-                  <input
-                    type="text"
-                    value={stellarPkInput}
-                    onChange={(e) => setStellarPkInput(e.target.value)}
-                    placeholder="Your Stellar Public Key (Testnet)"
-                    style={{ 
-                      flex: 1, 
-                      padding: '8px 12px',
-                      borderRadius: '4px',
-                      border: '1px solid #ccc'
-                    }}
-                  />
-                  <button
-                    onClick={handleSaveStellarKey}
-                    style={{ 
-                      marginLeft: '10px',
-                      padding: '8px 16px',
-                      backgroundColor: '#6050dc',
-                      color: 'white',
-                      border: 'none',
-                      borderRadius: '4px',
-                      cursor: 'pointer'
-                    }}
-                  >
-                    Save Key
-                  </button>
-                </div>
-              </>
-            )}
-          </div>
 
           {/* Keep existing quest-in-progress UI separate */}
           {activeQuestForVerification && !showVerificationUI && activeQuestForVerification.status !== 'ready_to_verify' && (
@@ -427,7 +225,7 @@ export default function ViewRouter({
                 completion.
               </p>
               <button
-                onClick={handleStartVerification}
+                onClick={handleStartVerificationSafe}
                 style={{
                   backgroundColor: '#ff9800',
                   color: 'white',

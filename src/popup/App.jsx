@@ -1,12 +1,11 @@
 // src/ppopup/App.jsx
-import React, { useState, useEffect, useMemo, useRef } from 'react';
+import React, { useState, useEffect, useMemo, useRef, useCallback } from 'react';
 import { Wallet } from '@coinbase/onchainkit/wallet';
 import { useAccount, useBalance, useReadContract, useWriteContract, useDisconnect } from 'wagmi';
 import { baseSepolia } from 'wagmi/chains';
 import { formatUnits } from 'viem';
 import QuestBadgeABI from '../../artifacts/contracts/QuestBadge.sol/QuestBadge.json';
 import ViewRouter from './components/ViewRouter';
-import { Horizon, Asset } from 'stellar-sdk';
 import { MOCK_SPONSORED_QUESTS } from './data/mockQuests.json';
 const rewardTokenAddress = '0x6FDEAC95fe672E19a8759db03d6c24b25d9B8D92';
 const questBadgeContractAddress = '0x4475F90A71cb504539Ce1118cC7d343dC65153E7';
@@ -20,9 +19,6 @@ const GENERIC_BADGE_RARITY = "Common";
 const COMPLETED_QUESTS_STORAGE_KEY = 'completedQuestIds';
 const SURVEY_HISTORY_KEY = 'surveyResponseHistory';
 const ACTIVE_QUEST_STORAGE_KEY = 'activeQuestState';
-const STELLAR_PK_STORAGE_KEY = 'userStellarPublicKey';
-const STELLAR_ASSET_CODE = "HHBadge";
-const STELLAR_ISSUER_PUBLIC_KEY = "GDPVK6GDAT2E3RICXAFM3XVDSH4QHWOYTOTCOQKZZTDNGH27YYOLMY74";
 const PERSONA_HISTORY_KEY = 'personaAnalysisHistory';
 const SIMULATED_REWARDS_KEY = 'simulatedRewards'; // Add this near your other constants
 
@@ -39,9 +35,6 @@ function sendMessageToBg(msg) {
 
 function App() {
   const { address, isConnected } = useAccount();
-
-  // Move this line inside the function component
-  const [stellarHhBadgeBalance, setStellarHhBadgeBalance] = useState('...');
 
   // Navigation view state: 'main', 'tier', 'persona', 'marketplace'
   const [currentView, setCurrentView] = useState('main');
@@ -97,14 +90,6 @@ const [currentVerificationMCQ, setCurrentVerificationMCQ] = useState(null);
 const [userVerificationAnswer, setUserVerificationAnswer] = useState('');
 const [verificationTimer, setVerificationTimer] = useState(0);
 const [verificationResult, setVerificationResult] = useState('pending');
-
-  // Add these with your other useState hooks in App.jsx
-const [userStellarPublicKey, setUserStellarPublicKey] = useState('');
-const [stellarPkInput, setStellarPkInput] = useState('');
-const [isSyncingStellar, setIsSyncingStellar] = useState(false);
-
-// Add to App.jsx state variables:
-const [latestStellarTxHash, setLatestStellarTxHash] = useState('');
 
 // Add this state definition with your other state declarations in App.jsx
 const [personaHistory, setPersonaHistory] = useState([]);
@@ -199,26 +184,6 @@ useEffect(() => {
         // If there's an active quest, set it in state
         setActiveQuestForVerification(savedQuestState);
         console.log("Active quest loaded from storage:", savedQuestState.questTitle);
-      }
-    });
-  }
-}, []);
-
-  // Add this useEffect with your other storage-related useEffects
-useEffect(() => {
-  if (chrome.storage && chrome.storage.local) {
-    chrome.storage.local.get([STELLAR_PK_STORAGE_KEY], (result) => {
-      if (chrome.runtime.lastError) {
-        console.error("Error loading Stellar public key:", chrome.runtime.lastError);
-        return;
-      }
-      
-      const savedKey = result[STELLAR_PK_STORAGE_KEY] || '';
-      if (savedKey) {
-        console.log("Loaded Stellar public key from storage");
-        setUserStellarPublicKey(savedKey);
-      } else {
-        console.log("No saved Stellar public key found");
       }
     });
   }
@@ -440,6 +405,79 @@ const displayedQuests = useMemo(() => {
     }
     setCurrentView('main');
   };
+
+  // Define handleStartVerification function using useCallback for proper memoization
+  const handleStartVerification = useCallback(() => {
+    console.log("HSV: handleStartVerification called.");
+    
+    if (!activeQuestForVerification) {
+      console.error("HSV: No active quest available for verification");
+      setQuestFeedback("Error: No active quest to verify.");
+      return;
+    }
+    
+    console.log("HSV: Active quest for verification:", activeQuestForVerification);
+
+    // First check if the quest already has an MCQ defined
+    if (activeQuestForVerification.verificationMCQ) {
+      console.log("HSV: Using predefined verification MCQ from quest");
+      // Set up verification UI and state with the predefined MCQ
+      setCurrentVerificationMCQ(activeQuestForVerification.verificationMCQ);
+      setVerificationTimer(activeQuestForVerification.verificationTimeLimit || 60);
+      setUserVerificationAnswer('');
+      setVerificationResult('pending');
+      setShowVerificationUI(true);
+      return;
+    }
+    
+    // If no predefined MCQ, request one from the background
+    const messagePayload = { 
+      type: 'GET_VERIFICATION_MCQ', 
+      topic: activeQuestForVerification.verificationTopic || activeQuestForVerification.questTitle,
+      keywords: activeQuestForVerification.questKeywords 
+    };
+    
+    console.log("HSV: Sending GET_VERIFICATION_MCQ message:", messagePayload);
+    
+    chrome.runtime.sendMessage(messagePayload, (response) => {
+      console.log("HSV: Received response from background for MCQ:", response);
+      
+      if (chrome.runtime.lastError) {
+        console.error("HSV: Error getting verification MCQ:", chrome.runtime.lastError.message);
+        setQuestFeedback("Error: Could not generate verification question.");
+        return;
+      }
+      
+      if (response && response.error) {
+        console.error("HSV: Background script returned error:", response.error);
+        setQuestFeedback(`Error: ${response.error}`);
+        return;
+      }
+      
+      if (response && response.mcqData) {
+        console.log("HSV: Setting currentVerificationMCQ and showing UI.");
+        // Set up verification UI and state
+        setCurrentVerificationMCQ(response.mcqData);
+        setVerificationTimer(activeQuestForVerification.verificationTimeLimit || 60);
+        setUserVerificationAnswer('');
+        setVerificationResult('pending');
+        setShowVerificationUI(true);
+      } else {
+        console.error("HSV: Invalid or missing MCQ data in response");
+        setQuestFeedback("Error: Failed to generate verification question.");
+      }
+    });
+  }, [
+    activeQuestForVerification,
+    setQuestFeedback,
+    setCurrentVerificationMCQ,
+    setVerificationTimer,
+    setUserVerificationAnswer,
+    setVerificationResult,
+    setShowVerificationUI
+  ]);
+
+  // ...existing code...
 
   // 5. handleNextQuestion Function
   const handleNextQuestion = () => {
@@ -1034,115 +1072,6 @@ const handleChapterNavigation = (action, branchChoice) => {
   const realBalanceFormatted = balanceData ? parseFloat(balanceData.formatted) : 0;
   const displayBalance = realBalanceFormatted;
 
-  // Add this function near your other handler functions in App.jsx
-const handleTestStellarSync = async () => {
-  // Test Stellar public key (replace with your actual test account public key)
-  const testStellarPublicKey = "GAWXEWUTUOF2EKWG2DDKWBWENVBVRNKSLCRKMRSXB7NYHZR7M62PRXGN";
-  const backendUrl = 'http://localhost:3001/sync-stellar';
-  const secret = import.meta.env.VITE_MINTER_API_SECRET;
-  
-  if (!secret) {
-    console.error("API Secret not found in environment variables");
-    setQuestFeedback('Error: Missing API configuration.');
-    return;
-  }
-  
-  console.log(`Testing Stellar sync with Base address: ${address}`);
-  setQuestFeedback('Sending Stellar sync request...');
-  
-  try {
-    const response = await fetch(backendUrl, {
-      method: 'POST',
-      headers: {
-        'Content-Type': 'application/json',
-        'X-API-Secret': secret
-      },
-      body: JSON.stringify({
-        baseAddress: address,
-        stellarPublicKey: testStellarPublicKey
-      })
-    });
-    
-    const responseData = await response.json();
-    console.log("Stellar sync response:", responseData);
-    
-    if (response.ok && responseData.success) {
-      setQuestFeedback(`Stellar sync successful: ${responseData.message}`);
-    } else {
-      setQuestFeedback(`Stellar sync failed: ${responseData.error || 'Unknown error'}`);
-    }
-  } catch (error) {
-    console.error("Error during Stellar sync:", error);
-    setQuestFeedback(`Error: ${error.message || 'Could not connect to backend'}`);
-  } finally {
-    // Clear feedback after 5 seconds
-    setTimeout(() => setQuestFeedback(''), 5000);
-  }
-};
-
-  // Add this function near your other handler functions
-const handleStartVerification = () => {
-  console.log("HSV: handleStartVerification called.");
-  
-  if (!activeQuestForVerification) {
-    console.error("HSV: No active quest available for verification");
-    setQuestFeedback("Error: No active quest to verify.");
-    return;
-  }
-  
-  console.log("HSV: Active quest for verification:", activeQuestForVerification);
-
-  // First check if the quest already has an MCQ defined
-  if (activeQuestForVerification.verificationMCQ) {
-    console.log("HSV: Using predefined verification MCQ from quest");
-    // Set up verification UI and state with the predefined MCQ
-    setCurrentVerificationMCQ(activeQuestForVerification.verificationMCQ);
-    setVerificationTimer(activeQuestForVerification.verificationTimeLimit || 60);
-    setUserVerificationAnswer('');
-    setVerificationResult('pending');
-    setShowVerificationUI(true);
-    return;
-  }
-  
-  // If no predefined MCQ, request one from the background
-  const messagePayload = { 
-    type: 'GET_VERIFICATION_MCQ', 
-    topic: activeQuestForVerification.verificationTopic || activeQuestForVerification.questTitle,
-    keywords: activeQuestForVerification.questKeywords 
-  };
-  
-  console.log("HSV: Sending GET_VERIFICATION_MCQ message:", messagePayload);
-  
-  chrome.runtime.sendMessage(messagePayload, (response) => {
-    console.log("HSV: Received response from background for MCQ:", response);
-    
-    if (chrome.runtime.lastError) {
-      console.error("HSV: Error getting verification MCQ:", chrome.runtime.lastError.message);
-      setQuestFeedback("Error: Could not generate verification question.");
-      return;
-    }
-    
-    if (response && response.error) {
-      console.error("HSV: Background script returned error:", response.error);
-      setQuestFeedback(`Error: ${response.error}`);
-      return;
-    }
-    
-    if (response && response.mcqData) {
-      console.log("HSV: Setting currentVerificationMCQ and showing UI.");
-      // Set up verification UI and state
-      setCurrentVerificationMCQ(response.mcqData);
-      setVerificationTimer(activeQuestForVerification.verificationTimeLimit || 60);
-      setUserVerificationAnswer('');
-      setVerificationResult('pending');
-      setShowVerificationUI(true);
-    } else {
-      console.error("HSV: Invalid or missing MCQ data in response");
-      setQuestFeedback("Error: Failed to generate verification question.");
-    }
-  });
-};
-
   // Add this useEffect hook to handle the countdown timer
 useEffect(() => {
   let timerId;
@@ -1173,7 +1102,7 @@ useEffect(() => {
 }, [showVerificationUI, verificationTimer]);
 
   // Replace the existing handleSubmitVerification function with this fixed version
-const handleSubmitVerification = async () => {
+  async function handleSubmitVerification() {
   // stop the countdown
   clearInterval(timerIntervalRef.current);
 
@@ -1358,185 +1287,7 @@ const handleSubmitVerification = async () => {
 
   // clear feedback after a bit longer
   setTimeout(() => setQuestFeedback(''), 10000);
-};
-
-  // Add this with your other handler functions in App.jsx
-const handleSaveStellarKey = () => {
-  const key = stellarPkInput.trim();
-  
-  // Simple validation - Stellar public keys start with G and are 56 characters long
-  const isValid = key.startsWith('G') && key.length === 56;
-  
-  if (!isValid) {
-    setQuestFeedback('Invalid Stellar Public Key format.');
-    setTimeout(() => setQuestFeedback(''), 3000);
-    return;
   }
-  
-  // Save to chrome.storage.local
-  if (chrome.storage && chrome.storage.local) {
-    chrome.storage.local.set({ [STELLAR_PK_STORAGE_KEY]: key }, () => {
-      if (chrome.runtime.lastError) {
-        console.error("Error saving Stellar public key:", chrome.runtime.lastError);
-        setQuestFeedback('Error saving Stellar key.');
-        setTimeout(() => setQuestFeedback(''), 3000);
-        return;
-      }
-      
-      // Update state and provide feedback
-      setUserStellarPublicKey(key);
-      setStellarPkInput(''); // Clear input field
-      setQuestFeedback('Stellar key saved successfully!');
-      setTimeout(() => setQuestFeedback(''), 3000);
-    });
-  } else {
-    setQuestFeedback('Storage not available.');
-    setTimeout(() => setQuestFeedback(''), 3000);
-  }
-};
-
-  // Replace the existing handleSyncToStellar function with this updated version
-const handleSyncToStellar = async () => {
-  if (!userStellarPublicKey) {
-    setQuestFeedback('No Stellar account linked.');
-    setTimeout(() => setQuestFeedback(''), 3000);
-    return;
-  }
-  
-  // Set loading state and initial feedback
-  setIsSyncingStellar(true);
-  setQuestFeedback('Syncing achievements to Stellar...');
-  
-  const backendUrl = 'http://localhost:3001/sync-stellar';
-  const secret = import.meta.env.VITE_MINTER_API_SECRET;
-  
-  if (!secret) {
-    console.error("API Secret not found in environment variables");
-    setQuestFeedback('Error: Missing API configuration.');
-    setIsSyncingStellar(false);
-    setTimeout(() => setQuestFeedback(''), 3000);
-    return;
-  }
-  
-  console.log(`Syncing achievements to Stellar for address: ${address} with badge count: ${badgeCount || 0}`);
-  
-  try {
-    const response = await fetch(backendUrl, {
-      method: 'POST',
-      headers: {
-        'Content-Type': 'application/json',
-        'X-API-Secret': secret
-      },
-      body: JSON.stringify({
-        baseAddress: address,
-        stellarPublicKey: userStellarPublicKey,
-        baseBadgeCount: badgeCount || 0 // Pass the badge count to backend
-      })
-    });
-    
-    const responseData = await response.json();
-    console.log("Stellar sync response:", responseData);
-    
-    if (response.ok && responseData.success) {
-      // Check if any tokens were sent or if already up-to-date
-      if (responseData.stellarTxHash) {
-        // Store the full transaction hash
-        setLatestStellarTxHash(responseData.stellarTxHash); 
-        // Display the shortened version in feedback with amount synced
-        setQuestFeedback(`Success! Synced ${responseData.amountSent || ''} badges to Stellar. Tx: ${responseData.stellarTxHash.substring(0, 8)}...`);
-      } else {
-        // No transaction was needed, already up-to-date
-        setLatestStellarTxHash('');
-        setQuestFeedback(`Stellar balance already up-to-date (${responseData.currentBalance || 0} HHBadge)`);
-      }
-    } else {
-      // Clear transaction hash on error
-      setLatestStellarTxHash('');
-      setQuestFeedback(`Stellar sync failed: ${responseData.error || 'Unknown backend error'}`);
-    }
-  } catch (error) {
-    // Clear transaction hash on error
-    setLatestStellarTxHash('');
-    // Network or other errors
-    console.error("Error during Stellar sync:", error);
-    setQuestFeedback(`Error syncing with Stellar: ${error.message || 'Could not connect to backend'}`);
-  } finally {
-    // Always reset loading state
-    setIsSyncingStellar(false);
-    
-    // Clear feedback after a few seconds
-    setTimeout(() => setQuestFeedback(''), 7000);
-  }
-};
-
-  // Add this effect to fetch the Stellar asset balance when the user's Stellar key changes
-useEffect(() => {
-  if (!isConnected || !userStellarPublicKey) {
-    setStellarHhBadgeBalance('N/A');
-    return;
-  }
-  
-  // Validate Stellar public key format
-  if (!userStellarPublicKey.startsWith('G')) {
-    console.error("Invalid Stellar public key format:", userStellarPublicKey);
-    setStellarHhBadgeBalance('Invalid Key');
-    return;
-  }
-
-  // Make sure the issuer key actually exists before creating the Asset
-  if (!STELLAR_ISSUER_PUBLIC_KEY) {
-    console.error("Missing Stellar issuer public key");
-    setStellarHhBadgeBalance('Config Error');
-    return;
-  }
-
-  setStellarHhBadgeBalance('Loading...');
-  
-  try {
-    // Create Horizon server instance
-    const server = new Horizon.Server('https://horizon-testnet.stellar.org');
-    
-    // Safely create the Asset with error handling
-    let badgeAsset;
-    try {
-      badgeAsset = new Asset(STELLAR_ASSET_CODE, STELLAR_ISSUER_PUBLIC_KEY);
-    } catch (assetErr) {
-      console.error("Invalid issuer for Stellar Asset:", STELLAR_ISSUER_PUBLIC_KEY, assetErr);
-      setStellarHhBadgeBalance('Asset Error');
-      return;
-    }
-    
-    (async () => {
-      try {
-        const account = await server.loadAccount(userStellarPublicKey);
-        
-        const hhBadgeLine = account.balances.find(b => 
-          b.asset_type !== 'native' && 
-          b.asset_code === badgeAsset.getCode() && 
-          b.asset_issuer === badgeAsset.getIssuer()
-        );
-        
-        if (hhBadgeLine) {
-          setStellarHhBadgeBalance(hhBadgeLine.balance);
-        } else {
-          setStellarHhBadgeBalance('0.0');
-        }
-      } catch (error) {
-        console.error("Error fetching Stellar balance:", error);
-        
-        // Check if the error is because the account doesn't exist yet
-        if (error.response && error.response.status === 404) {
-          setStellarHhBadgeBalance('0.0');
-        } else {
-          setStellarHhBadgeBalance('Error');
-        }
-      }
-    })();
-  } catch (sdkError) {
-    console.error("Error initializing Stellar SDK:", sdkError);
-    setStellarHhBadgeBalance('SDK Error');
-  }
-}, [userStellarPublicKey, isConnected]);
 
   // Add this function to the App component
 
@@ -1752,23 +1503,6 @@ async function loadSurveyInBatches(topic, totalQuestions = 25, batchSize = 2) {
   </div>
 </div>
           <p>Detected Keywords: {isLoadingQuest ? 'Loading...' : (interestKeywords || 'None')}</p>
-          
-          <p>
-            Stellar Badges: {
-              stellarHhBadgeBalance === 'Loading...' ? (
-                <span style={{ fontSize: '0.9em', color: '#666' }}>Loading...</span>
-              ) : stellarHhBadgeBalance === 'Error' ? (
-                <span style={{ color: '#d32f2f' }}>Error loading</span>
-              ) : (
-                <span>
-                  {stellarHhBadgeBalance} {STELLAR_ASSET_CODE}
-                  <span style={{ fontSize: '0.8em', color: '#666', marginLeft: '4px' }}>
-                    (Testnet)
-                  </span>
-                </span>
-              )
-            }
-          </p>
 
           {/* pass all state & handlers down to ViewRouter */}
           <ViewRouter
@@ -1806,9 +1540,13 @@ async function loadSurveyInBatches(topic, totalQuestions = 25, batchSize = 2) {
             handleStartQuest={handleStartQuest}
             goToPersonaPortal={goToPersonaPortal}
             questFeedback={questFeedback}
+            setQuestFeedback={setQuestFeedback}
             refetch={refetch}
             activeQuestForVerification={activeQuestForVerification}
-            handleStartVerification={handleStartVerification}
+            handleStartVerification={handleStartVerification || (() => {
+              console.warn('handleStartVerification fallback called');
+              setQuestFeedback('Verification function temporarily unavailable');
+            })}
             userVerificationAnswer={userVerificationAnswer}
             setUserVerificationAnswer={setUserVerificationAnswer}
             verificationResult={verificationResult}
@@ -1825,15 +1563,6 @@ async function loadSurveyInBatches(topic, totalQuestions = 25, batchSize = 2) {
             GENERIC_BADGE_NAME={GENERIC_BADGE_NAME}
             GENERIC_BADGE_DESC={GENERIC_BADGE_DESC}
             GENERIC_SURVEY_BADGE_URI={GENERIC_SURVEY_BADGE_URI}
-            handleTestStellarSync={handleTestStellarSync}
-            // Include these new props alongside your existing ones
-            userStellarPublicKey={userStellarPublicKey}
-            stellarPkInput={stellarPkInput}
-            setStellarPkInput={setStellarPkInput}
-            handleSaveStellarKey={handleSaveStellarKey}
-            handleSyncToStellar={handleSyncToStellar}
-            isSyncingStellar={isSyncingStellar}
-            latestStellarTxHash={latestStellarTxHash}
             personaHistory={personaHistory || []}
             refreshPersonaHistory={refreshPersonaHistory}
             surveyChapters={surveyChapters}
