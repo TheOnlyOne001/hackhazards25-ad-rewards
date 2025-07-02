@@ -2,7 +2,7 @@
 import React from 'react';
 import ReactDOM from 'react-dom/client';
 import App from './App'; // Assuming App.jsx is in the same folder
-import './index.css'; // Assuming index.css is in src/
+import './index.css'; // CSS file for popup styling
 
 import { QueryClient, QueryClientProvider } from '@tanstack/react-query';
 import { WagmiProvider, createConfig, http } from 'wagmi';
@@ -10,7 +10,7 @@ import { baseSepolia } from 'wagmi/chains';
 import { coinbaseWallet, injected } from 'wagmi/connectors';
 import { OnchainKitProvider } from '@coinbase/onchainkit';
 
-const onchainKitApiKey = import.meta.env.VITE_ONCHAINKIT_API_KEY || "YOUR_FALLBACK_ONCHAINKIT_KEY"; // Use env var
+const onchainKitApiKey = process.env.ONCHAINKIT_API_KEY || "KWbUI7zBPikQKbkVhgbiBIjBUvvcwb05"; // Use env var with fallback
 
 const config = createConfig({
   chains: [baseSepolia],

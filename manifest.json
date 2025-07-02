@@ -1,8 +1,8 @@
 {
   "manifest_version": 3,
   "name": "HackHazards Ad Rewards",
-  "version": "1.0.0",
-  "description": "An onchain rewards extension using Base and partner technologies.",
+  "version": "1.1.0",
+  "description": "An onchain rewards extension with automatic engagement tracking using Base and partner technologies.",
   "icons": {
     "16": "icons/icon16.png",
     "48": "icons/icon48.png",
@@ -10,17 +10,26 @@
   },
   "permissions": [
     "storage",
-    "scripting",
     "activeTab",
-    "alarms"
+    "tabs",
+    "webNavigation",
+    "alarms",
+    "notifications"
   ],
   "host_permissions": [
     "<all_urls>"
   ],
   "background": {
-    "service_worker": "background.js",
-    "type": "module"
+    "service_worker": "background.js"
   },
+  "content_scripts": [
+    {
+      "matches": ["<all_urls>"],
+      "js": ["content.js"],
+      "run_at": "document_idle",
+      "all_frames": false
+    }
+  ],
   "action": {
     "default_title": "Open Ad Rewards Panel",
     "default_icon": {
@@ -28,6 +37,18 @@
       "48": "icons/icon48.png",
       "128": "icons/icon128.png"
     },
-    "default_popup": "dist/popup.html"
+    "default_popup": "popup.html"
+  },
+  "web_accessible_resources": [
+    {
+      "resources": [
+        "lib/transformers.min.js",
+        "models/*"
+      ],
+      "matches": ["<all_urls>"]
+    }
+  ],
+  "content_security_policy": {
+    "extension_pages": "script-src 'self' 'wasm-unsafe-eval'; object-src 'self';"
   }
 }
