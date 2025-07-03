@@ -1,0 +1,377 @@
+{
+  "taxonomy": {
+    "shopping": {
+      "electronics": {
+        "research": {
+          "patterns": ["/reviews/", "/compare/", "/specs/", "vs"],
+          "keywords": ["review", "comparison", "benchmark", "unboxing"],
+          "weight": 1.0
+        },
+        "cart": {
+          "patterns": ["/cart", "/basket", "add-to-cart"],
+          "keywords": ["add to cart", "save for later"],
+          "weight": 2.0
+        },
+        "purchase": {
+          "patterns": ["/checkout", "/payment", "/order-confirm"],
+          "keywords": ["buy now", "complete order", "payment"],
+          "weight": 3.0
+        }
+      },
+      "fashion": {
+        "sneakers": {
+          "research": {
+            "patterns": ["/sneakers/", "/shoes/", "footwear"],
+            "keywords": ["nike", "adidas", "jordan", "yeezy", "sneaker release"],
+            "domains": ["stockx.com", "goat.com", "nike.com"],
+            "weight": 1.0
+          },
+          "cart": {
+            "patterns": ["size-select", "add-to-bag"],
+            "keywords": ["select size", "add to bag"],
+            "weight": 2.5
+          },
+          "purchase": {
+            "patterns": ["shipping-info", "billing"],
+            "keywords": ["ship to", "express delivery"],
+            "weight": 3.5
+          }
+        },
+        "apparel": {
+          "research": {
+            "patterns": ["/clothing/", "/fashion/", "/style/"],
+            "keywords": ["outfit", "fashion", "style guide", "lookbook"],
+            "weight": 1.0
+          },
+          "cart": {
+            "patterns": ["size-chart", "wishlist"],
+            "keywords": ["size guide", "save item"],
+            "weight": 2.0
+          },
+          "purchase": {
+            "patterns": ["promo-code", "discount"],
+            "keywords": ["coupon", "sale", "clearance"],
+            "weight": 3.0
+          }
+        }
+      },
+      "home": {
+        "furniture": {
+          "research": {
+            "patterns": ["/furniture/", "/home-decor/"],
+            "keywords": ["ikea", "wayfair", "interior design"],
+            "weight": 1.0
+          },
+          "cart": {
+            "patterns": ["room-planner", "save-room"],
+            "keywords": ["design room", "furniture set"],
+            "weight": 2.0
+          },
+          "purchase": {
+            "patterns": ["delivery-options", "assembly"],
+            "keywords": ["white glove", "installation"],
+            "weight": 3.0
+          }
+        }
+      }
+    },
+    "finance": {
+      "crypto": {
+        "defi": {
+          "research": {
+            "patterns": ["/defi/", "/yield/", "/liquidity/"],
+            "keywords": ["apy", "tvl", "impermanent loss", "yield farming"],
+            "domains": ["defillama.com", "dune.com"],
+            "weight": 1.0
+          },
+          "interaction": {
+            "patterns": ["/swap", "/pool", "/stake"],
+            "keywords": ["connect wallet", "approve token"],
+            "weight": 2.0
+          },
+          "transaction": {
+            "patterns": ["tx/", "etherscan", "confirmed"],
+            "keywords": ["transaction hash", "gas fee"],
+            "weight": 3.0
+          }
+        },
+        "nft": {
+          "research": {
+            "patterns": ["/collection/", "/nft/", "opensea"],
+            "keywords": ["floor price", "rarity", "traits"],
+            "weight": 1.0
+          },
+          "bidding": {
+            "patterns": ["/offer", "/bid", "make-offer"],
+            "keywords": ["place bid", "counter offer"],
+            "weight": 2.0
+          },
+          "purchase": {
+            "patterns": ["buy-now", "mint", "claim"],
+            "keywords": ["mint price", "gas estimate"],
+            "weight": 3.0
+          }
+        }
+      },
+      "trading": {
+        "stocks": {
+          "research": {
+            "patterns": ["/quote/", "/chart/", "ticker="],
+            "keywords": ["pe ratio", "earnings", "dividend"],
+            "weight": 1.0
+          },
+          "analysis": {
+            "patterns": ["technical-analysis", "screener"],
+            "keywords": ["rsi", "macd", "support level"],
+            "weight": 1.5
+          },
+          "execution": {
+            "patterns": ["order-entry", "trade/confirm"],
+            "keywords": ["limit order", "stop loss"],
+            "weight": 3.0
+          }
+        }
+      }
+    },
+    "technology": {
+      "saas": {
+        "research": {
+          "patterns": ["/pricing", "/features", "/demo"],
+          "keywords": ["free trial", "enterprise", "api docs"],
+          "weight": 1.0
+        },
+        "trial": {
+          "patterns": ["/signup", "/onboarding", "get-started"],
+          "keywords": ["start trial", "create account"],
+          "weight": 2.0
+        },
+        "purchase": {
+          "patterns": ["/upgrade", "/billing", "add-seats"],
+          "keywords": ["upgrade plan", "add users"],
+          "weight": 3.0
+        }
+      },
+      "developer": {
+        "learning": {
+          "patterns": ["/tutorial", "/docs", "how-to"],
+          "keywords": ["example", "documentation", "guide"],
+          "domains": ["github.com", "stackoverflow.com"],
+          "weight": 1.0
+        },
+        "building": {
+          "patterns": ["/api/", "sandbox", "playground"],
+          "keywords": ["api key", "webhook", "integration"],
+          "weight": 2.0
+        },
+        "deploying": {
+          "patterns": ["deploy", "production", "hosting"],
+          "keywords": ["deployment", "ci/cd", "kubernetes"],
+          "weight": 2.5
+        }
+      }
+    },
+    "entertainment": {
+      "gaming": {
+        "research": {
+          "patterns": ["/games/", "review", "gameplay"],
+          "keywords": ["steam", "epic games", "ps5", "xbox"],
+          "weight": 1.0
+        },
+        "wishlist": {
+          "patterns": ["wishlist", "follow", "notify"],
+          "keywords": ["add to library", "pre-order"],
+          "weight": 2.0
+        },
+        "purchase": {
+          "patterns": ["buy-game", "add-to-cart", "checkout"],
+          "keywords": ["season pass", "dlc", "bundle"],
+          "weight": 3.0
+        }
+      },
+      "streaming": {
+        "browsing": {
+          "patterns": ["/browse", "/discover", "genre/"],
+          "keywords": ["netflix", "disney+", "hulu", "recommended"],
+          "weight": 1.0
+        },
+        "watching": {
+          "patterns": ["/watch/", "player", "episode"],
+          "keywords": ["play", "resume", "continue watching"],
+          "weight": 2.0
+        },
+        "subscribing": {
+          "patterns": ["subscribe", "plans", "premium"],
+          "keywords": ["free trial", "monthly", "annual"],
+          "weight": 3.0
+        }
+      }
+    },
+    "travel": {
+      "flights": {
+        "search": {
+          "patterns": ["/flights/", "search", "calendar"],
+          "keywords": ["round trip", "one way", "multi city"],
+          "weight": 1.0
+        },
+        "compare": {
+          "patterns": ["results", "filter", "sort"],
+          "keywords": ["cheapest", "shortest", "nonstop"],
+          "weight": 1.5
+        },
+        "booking": {
+          "patterns": ["select", "passenger", "payment"],
+          "keywords": ["book flight", "seat selection"],
+          "weight": 3.0
+        }
+      },
+      "accommodation": {
+        "search": {
+          "patterns": ["/hotels/", "stays", "rentals"],
+          "keywords": ["check-in", "guests", "amenities"],
+          "domains": ["booking.com", "airbnb.com", "hotels.com"],
+          "weight": 1.0
+        },
+        "compare": {
+          "patterns": ["map-view", "filters", "reviews"],
+          "keywords": ["rating", "location", "price range"],
+          "weight": 1.5
+        },
+        "booking": {
+          "patterns": ["reserve", "book-now", "confirm"],
+          "keywords": ["reservation", "cancellation policy"],
+          "weight": 3.0
+        }
+      }
+    },
+    "health": {
+      "fitness": {
+        "research": {
+          "patterns": ["/workout/", "/exercise/", "routine"],
+          "keywords": ["gym", "training", "fitness plan"],
+          "weight": 1.0
+        },
+        "tracking": {
+          "patterns": ["log", "progress", "stats"],
+          "keywords": ["calories", "reps", "personal record"],
+          "weight": 1.5
+        },
+        "purchase": {
+          "patterns": ["membership", "subscription", "equipment"],
+          "keywords": ["join now", "premium plan"],
+          "weight": 3.0
+        }
+      },
+      "wellness": {
+        "research": {
+          "patterns": ["/health/", "symptoms", "conditions"],
+          "keywords": ["treatment", "diagnosis", "prevention"],
+          "weight": 1.0
+        },
+        "booking": {
+          "patterns": ["appointment", "schedule", "doctor"],
+          "keywords": ["book appointment", "find provider"],
+          "weight": 2.0
+        },
+        "purchase": {
+          "patterns": ["pharmacy", "prescription", "order"],
+          "keywords": ["refill", "delivery", "insurance"],
+          "weight": 3.0
+        }
+      }
+    },
+    "food": {
+      "delivery": {
+        "browsing": {
+          "patterns": ["/restaurants/", "menu", "cuisine"],
+          "keywords": ["uber eats", "doordash", "grubhub"],
+          "weight": 1.0
+        },
+        "cart": {
+          "patterns": ["add-item", "customize", "special"],
+          "keywords": ["add to order", "extra", "notes"],
+          "weight": 2.0
+        },
+        "checkout": {
+          "patterns": ["delivery-time", "tip", "place-order"],
+          "keywords": ["asap", "scheduled", "contactless"],
+          "weight": 3.0
+        }
+      },
+      "grocery": {
+        "browsing": {
+          "patterns": ["/grocery/", "categories", "deals"],
+          "keywords": ["instacart", "whole foods", "fresh"],
+          "weight": 1.0
+        },
+        "list": {
+          "patterns": ["shopping-list", "save-item", "quantity"],
+          "keywords": ["add to list", "recurring", "favorites"],
+          "weight": 1.5
+        },
+        "checkout": {
+          "patterns": ["delivery-slot", "substitutions", "payment"],
+          "keywords": ["delivery window", "leave at door"],
+          "weight": 3.0
+        }
+      }
+    },
+    "education": {
+      "online": {
+        "browsing": {
+          "patterns": ["/courses/", "catalog", "subjects"],
+          "keywords": ["coursera", "udemy", "masterclass"],
+          "weight": 1.0
+        },
+        "preview": {
+          "patterns": ["syllabus", "preview", "instructor"],
+          "keywords": ["course content", "reviews", "certificate"],
+          "weight": 1.5
+        },
+        "enrollment": {
+          "patterns": ["enroll", "purchase", "access"],
+          "keywords": ["lifetime access", "money back"],
+          "weight": 3.0
+        }
+      }
+    },
+    "automotive": {
+      "research": {
+        "browsing": {
+          "patterns": ["/cars/", "models", "compare"],
+          "keywords": ["mpg", "safety rating", "msrp"],
+          "weight": 1.0
+        },
+        "configure": {
+          "patterns": ["build", "customize", "options"],
+          "keywords": ["trim level", "packages", "colors"],
+          "weight": 2.0
+        },
+        "purchase": {
+          "patterns": ["dealer", "finance", "lease"],
+          "keywords": ["apr", "down payment", "trade-in"],
+          "weight": 3.0
+        }
+      }
+    }
+  },
+  "intentSignals": {
+    "strong_purchase": {
+      "patterns": ["checkout", "payment", "billing", "confirm-order"],
+      "domElements": ["[data-testid*='checkout']", ".payment-form", "#place-order"],
+      "urlPatterns": ["/checkout", "/payment", "/order/confirm"],
+      "boost": 3.0
+    },
+    "moderate_intent": {
+      "patterns": ["cart", "basket", "wishlist", "save"],
+      "domElements": [".add-to-cart", "[class*='wishlist']", ".save-for-later"],
+      "urlPatterns": ["/cart", "/basket", "/wishlist"],
+      "boost": 2.0
+    },
+    "research_phase": {
+      "patterns": ["compare", "review", "specs", "features"],
+      "domElements": [".comparison-table", ".review-section", ".specifications"],
+      "urlPatterns": ["/compare", "/reviews", "/specifications"],
+      "boost": 1.0
+    }
+  }
+}

@@ -16,7 +16,8 @@ module.exports = {
     content: './src/content.js',
     popup: './src/popup/main.jsx',  // Point to React entry
     classificationService: './src/classificationService.js',
-    interestCaptureService: './services/interestCaptureService.js'
+    interestCaptureService: './services/interestCaptureService.js',
+    enhancedContentCollector: './src/content/enhancedContentCollector.js'
   },
   
   output: {
@@ -60,7 +61,8 @@ module.exports = {
       patterns: [
         { from: 'manifest.json', to: 'manifest.json' },
         { from: 'popup.html', to: 'popup.html' },
-        { from: 'icons', to: 'icons', noErrorOnMissing: true }
+        { from: 'icons', to: 'icons', noErrorOnMissing: true },
+        { from: 'src/data/taxonomy.json', to: 'data/taxonomy.json' }
       ]
     })
   ],

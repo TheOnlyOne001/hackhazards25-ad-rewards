@@ -1,4 +1,6 @@
 // src/popup/components/ViewRouter.jsx
+
+import EnhancedDashboard from './EnhancedDashboard';
 import React, { useState } from 'react';
 import QuestCard from './QuestCard'; // Make sure this import exists
 import InterestDashboard from './InterestDashboard';
@@ -205,6 +207,12 @@ export default function ViewRouter({
                 style={{ padding: '5px 10px', marginTop: '15px', marginLeft: '10px' }}
               >
                 Interest Profile
+              </button>
+              <button
+                onClick={() => setCurrentView('enhanced_interests')}
+                style={{ padding: '5px 10px', marginTop: '15px', marginLeft: '10px' }}
+              >
+                Enhanced Interests
               </button>
             </>
           )}
@@ -1325,6 +1333,8 @@ export default function ViewRouter({
         </div>
       ) : currentView === 'interests' ? (
         <InterestDashboard setCurrentView={setCurrentView} />
+      ) : currentView === 'enhanced_interests' ? (
+        <EnhancedDashboard setCurrentView={setCurrentView} />
       ) : null}
     </>
   );
