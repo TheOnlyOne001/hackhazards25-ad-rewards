@@ -1,4 +1,4 @@
-// content.js - Collects page data for classification
+// content.js - Unified page data collection and interest capture
 
 (function() {
   'use strict';
@@ -15,13 +15,22 @@
     mediaPlays: 0
   };
   
-  // Collect page content
+  // Data collection state
+  let pageDataSent = false;
+  let lastDataCapture = 0;
+  const CAPTURE_INTERVAL = 10000; // 10 seconds
+  
+  // Collect comprehensive page data for both classification and interest capture
   function collectPageData() {
     const data = {
       url: window.location.href,
       title: document.title,
       content: extractMainContent(),
-      meta: extractMetadata()
+      meta: extractMetadata(),
+      // Add interaction metrics for interest weighting
+      timeOnPage: (Date.now() - interactions.startTime) / 1000,
+      scrollDepth: interactions.scrollDepth,
+      interactions: interactions.clickCount + interactions.formFields + interactions.mediaPlays
     };
     
     return data;
@@ -81,21 +90,31 @@
       .trim();
   }
   
-  // Track scroll depth
+  // Track scroll depth with interest update trigger
   function trackScroll() {
     const scrollHeight = document.documentElement.scrollHeight - window.innerHeight;
     const scrolled = window.pageYOffset;
     const depth = scrollHeight > 0 ? (scrolled / scrollHeight) * 100 : 0;
     interactions.scrollDepth = Math.max(interactions.scrollDepth, depth);
+    
+    // Trigger interest update on significant scroll
+    if (depth > 25 && !pageDataSent) {
+      updateInterests();
+    }
   }
   
-  // Track clicks
+  // Track clicks with interest signals
   function trackClick(event) {
     interactions.clickCount++;
     
     // Track form interactions
     if (event.target.matches('input, textarea, select')) {
       interactions.formFields++;
+    }
+    
+    // Trigger interest update on meaningful interaction
+    if (interactions.clickCount % 3 === 0) {
+      updateInterests();
     }
   }
   
@@ -117,23 +136,63 @@
     interactions.mediaPlays++;
   }
   
-  // Send classification request
-  async function classifyPage() {
+  // Send both classification and interest capture data
+  async function classifyPageAndCaptureInterests() {
+    if (pageDataSent) return; // Prevent duplicate sends
+    
     const pageData = collectPageData();
     
     try {
-      const response = await chrome.runtime.sendMessage({
+      // Send for pattern-based classification
+      const classificationResponse = await chrome.runtime.sendMessage({
         type: 'CLASSIFY_CONTENT',
         data: pageData
       });
       
-      if (response.success) {
-        console.log('Page classified:', response.data);
-        // Store classification for popup
-        sessionStorage.setItem('classification', JSON.stringify(response.data));
+      if (classificationResponse.success) {
+        console.log('Page classified:', classificationResponse.data);
+        sessionStorage.setItem('classification', JSON.stringify(classificationResponse.data));
       }
+      
+      // Send for interest capture (passive collection)
+      const interestResponse = await chrome.runtime.sendMessage({
+        type: 'PAGE_DATA',
+        data: pageData
+      });
+      
+      if (interestResponse.success) {
+        console.log('Interests captured:', interestResponse.interests);
+        sessionStorage.setItem('interests', JSON.stringify(interestResponse.interests));
+      }
+      
+      pageDataSent = true;
+      
     } catch (error) {
-      console.error('Classification failed:', error);
+      console.error('Page analysis failed:', error);
+    }
+  }
+  
+  // Periodic interest updates (for long page visits)
+  async function updateInterests() {
+    const now = Date.now();
+    if (now - lastDataCapture < CAPTURE_INTERVAL) return;
+    
+    const pageData = collectPageData();
+    
+    try {
+      await chrome.runtime.sendMessage({
+        type: 'PAGE_DATA',
+        data: {
+          ...pageData,
+          isUpdate: true // Flag as periodic update
+        }
+      });
+      
+      lastDataCapture = now;
+      console.log('Interest data updated');
+      
+    } catch (error) {
+      console.error('Interest update failed:', error);
     }
   }
   
@@ -159,7 +218,7 @@
     }
   }
   
-  // Initialize tracking
+  // Initialize unified tracking system
   function initialize() {
     // Add event listeners
     window.addEventListener('scroll', trackScroll, { passive: true });
@@ -172,30 +231,58 @@
       media.addEventListener('play', trackMediaPlay);
     });
     
-    // Classify page after load
+    // Initial classification and interest capture after load
     if (document.readyState === 'complete') {
-      classifyPage();
+      setTimeout(classifyPageAndCaptureInterests, 1000); // Delay for content loading
     } else {
-      window.addEventListener('load', classifyPage);
+      window.addEventListener('load', () => {
+        setTimeout(classifyPageAndCaptureInterests, 1000);
+      });
     }
     
-    // Send engagement data periodically
+    // Periodic interest updates for long visits
+    setInterval(updateInterests, CAPTURE_INTERVAL);
+    
+    // Send engagement data periodically (existing functionality)
     setInterval(sendEngagementData, 30000); // Every 30 seconds
     
     // Send final data on unload
-    window.addEventListener('beforeunload', sendEngagementData);
+    window.addEventListener('beforeunload', () => {
+      sendEngagementData();
+      updateInterests(); // Final interest capture
+    });
+    
+    // Page visibility change (tab switching)
+    document.addEventListener('visibilitychange', () => {
+      if (document.visibilityState === 'hidden') {
+        updateInterests(); // Capture when leaving page
+      }
+    });
   }
   
   // Start tracking
   initialize();
   
-  // Expose API for popup
+  // Expose unified API for popup
   window.extensionAPI = {
     getClassification: () => {
       const stored = sessionStorage.getItem('classification');
       return stored ? JSON.parse(stored) : null;
     },
+    getInterests: () => {
+      const stored = sessionStorage.getItem('interests');
+      return stored ? JSON.parse(stored) : null;
+    },
     getEngagement: () => interactions,
-    getSessionId: () => sessionId
+    getSessionId: () => sessionId,
+    // Combined data for popup
+    getPageAnalysis: () => {
+      return {
+        classification: window.extensionAPI.getClassification(),
+        interests: window.extensionAPI.getInterests(),
+        engagement: interactions,
+        sessionId: sessionId
+      };
+    }
   };
 })();

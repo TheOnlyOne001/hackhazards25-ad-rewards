@@ -1,6 +1,7 @@
 // src/popup/components/ViewRouter.jsx
 import React, { useState } from 'react';
 import QuestCard from './QuestCard'; // Make sure this import exists
+import InterestDashboard from './InterestDashboard';
 
 export default function ViewRouter({
   currentView,
@@ -198,6 +199,12 @@ export default function ViewRouter({
                 style={{ padding: '5px 10px', marginTop: '15px', marginLeft: '10px' }}
               >
                 My Badges
+              </button>
+              <button
+                onClick={() => setCurrentView('interests')}
+                style={{ padding: '5px 10px', marginTop: '15px', marginLeft: '10px' }}
+              >
+                Interest Profile
               </button>
             </>
           )}
@@ -1316,6 +1323,8 @@ export default function ViewRouter({
             <p>You haven't earned any badges yet! Complete quests to start your collection.</p>
           )}
         </div>
+      ) : currentView === 'interests' ? (
+        <InterestDashboard setCurrentView={setCurrentView} />
       ) : null}
     </>
   );

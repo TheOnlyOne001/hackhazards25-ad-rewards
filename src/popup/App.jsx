@@ -37,7 +37,7 @@ function sendMessageToBg(msg) {
 function App() {
   const { address, isConnected } = useAccount();
 
-  // Navigation view state: 'main', 'tier', 'persona', 'marketplace'
+  // Navigation view state: 'main', 'tier', 'persona', 'marketplace', 'badges', 'interests'
   const [currentView, setCurrentView] = useState('main');
   
   // 1. Interval Ref

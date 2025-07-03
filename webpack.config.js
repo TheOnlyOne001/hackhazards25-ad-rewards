@@ -15,7 +15,8 @@ module.exports = {
     background: './src/background.js',
     content: './src/content.js',
     popup: './src/popup/main.jsx',  // Point to React entry
-    classificationService: './src/classificationService.js'
+    classificationService: './src/classificationService.js',
+    interestCaptureService: './services/interestCaptureService.js'
   },
   
   output: {
